@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import TiltCard from '../components/common/TiltCard';
 import DataTable from '../components/common/DataTable';
@@ -51,6 +51,34 @@ function symbolForAddress(addr: string, registry: Token[]): string {
 function feeBpsLabel(bps: number): string {
   const tier = FEE_TIERS.find(f => f.fee === bps);
   return tier?.label ?? `${bps / 10_000}%`;
+}
+
+/** Enough fractional digits so small spot prices (e.g. WETH per USDC) do not collapse to 0.0000. */
+function decimalsForSpotRange(spot: number): number {
+  if (!Number.isFinite(spot) || spot <= 0) return 8;
+  const log10 = Math.log10(spot);
+  if (log10 >= -2) return 4;
+  if (log10 >= -6) return 8;
+  return Math.min(18, Math.ceil(-log10) + 2);
+}
+
+function spotToRangeStrings(uiSpot: number): { lower: string; upper: string } {
+  const d = decimalsForSpotRange(uiSpot);
+  return {
+    lower: (uiSpot * 0.9).toFixed(d),
+    upper: (uiSpot * 1.1).toFixed(d),
+  };
+}
+
+/** Avoid `toFixed(6)` wiping tiny linked amounts for token1-heavy pairs. */
+function formatLinkedDepositAmount(value: number): string {
+  if (!Number.isFinite(value)) return '';
+  if (value === 0) return '0';
+  const a = Math.abs(value);
+  const frac = a >= 1 ? 6 : a >= 0.01 ? 8 : a >= 1e-6 ? 12 : 18;
+  let s = value.toFixed(frac);
+  s = s.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  return s;
 }
 
 export default function PoolPage() {
@@ -141,6 +169,13 @@ export default function PoolPage() {
     setIndexPage(1);
   }, [poolMode]);
 
+  /** Invalidate range when fee tier changes so we never keep the previous pool's ticks/prices. */
+  useEffect(() => {
+    setPriceLower('0.9');
+    setPriceUpper('1.1');
+    setFullRange(false);
+  }, [fee]);
+
   useEffect(() => {
     setLoadingPool(true);
     Promise.all([
@@ -154,8 +189,9 @@ export default function PoolPage() {
           p.token0.address.toLowerCase() === token0.address.toLowerCase()
             ? p.price
             : 1 / p.price;
-        setPriceLower((uiP * 0.9).toFixed(4));
-        setPriceUpper((uiP * 1.1).toFixed(4));
+        const { lower, upper } = spotToRangeStrings(uiP);
+        setPriceLower(lower);
+        setPriceUpper(upper);
       }
     }).finally(() => setLoadingPool(false));
   }, [token0, token1, fee]);
@@ -166,10 +202,11 @@ export default function PoolPage() {
   useEffect(() => {
     if (loadingPool) return;
     if (poolMode !== 'new' || poolInitialized) return;
-    const p = parseFloat(initialPrice);
+    const p = Number.parseFloat(initialPrice);
     if (!Number.isFinite(p) || p <= 0) return;
-    setPriceLower((p * 0.9).toFixed(4));
-    setPriceUpper((p * 1.1).toFixed(4));
+    const { lower, upper } = spotToRangeStrings(p);
+    setPriceLower(lower);
+    setPriceUpper(upper);
   }, [pool, loadingPool, initialPrice, poolMode, poolInitialized, token0.address, token1.address]);
 
   useEffect(() => {
@@ -186,23 +223,54 @@ export default function PoolPage() {
   const linkPrice = useMemo(() => {
     if (poolInitialized && pool) {
       const match = pool.token0.address.toLowerCase() === token0.address.toLowerCase();
-      return match ? pool.price : 1 / pool.price;
+      const p = match ? pool.price : 1 / pool.price;
+      return Number.isFinite(p) && p > 0 ? p : null;
     }
-    const ip = parseFloat(initialPrice);
-    if (poolMode === 'new' && Number.isFinite(ip) && ip > 0) return ip;
+    if (poolMode === 'existing' && !poolInitialized) {
+      const pl = Number.parseFloat(priceLower);
+      const pu = Number.parseFloat(priceUpper);
+      if (Number.isFinite(pl) && Number.isFinite(pu) && pl > 0 && pu > 0 && pl < pu) {
+        return Math.sqrt(pl * pu);
+      }
+    }
+    const ip = Number.parseFloat(initialPrice);
+    if (!Number.isFinite(ip) || ip <= 0) return null;
+    if (poolMode === 'new') return ip;
+    if (poolMode === 'existing') return ip;
     return null;
-  }, [pool, poolInitialized, token0.address, initialPrice, poolMode]);
+  }, [pool, poolInitialized, token0.address, initialPrice, poolMode, priceLower, priceUpper]);
+
+  const amount0Ref = useRef(amount0);
+  amount0Ref.current = amount0;
+
+  /** If amount0 was entered while pool/linkPrice was loading, fill amount1 once price is known. */
+  useEffect(() => {
+    if (linkPrice === null) return;
+    const raw = amount0Ref.current.trim();
+    if (!raw) return;
+    const a0 = Number.parseFloat(raw);
+    if (!Number.isFinite(a0) || a0 <= 0) return;
+    setAmount1(formatLinkedDepositAmount(a0 * linkPrice));
+  }, [linkPrice, fee, pool?.address]);
 
   const handleAmount0Change = (val: string) => {
     setAmount0(val);
-    if (linkPrice !== null && val && parseFloat(val) > 0)
-      setAmount1((parseFloat(val) * linkPrice).toFixed(6));
+    if (linkPrice !== null && val) {
+      const a0 = Number.parseFloat(val);
+      if (Number.isFinite(a0) && a0 > 0) {
+        setAmount1(formatLinkedDepositAmount(a0 * linkPrice));
+      }
+    }
   };
 
   const handleAmount1Change = (val: string) => {
     setAmount1(val);
-    if (linkPrice !== null && val && parseFloat(val) > 0)
-      setAmount0((parseFloat(val) / linkPrice).toFixed(6));
+    if (linkPrice !== null && val) {
+      const a1 = Number.parseFloat(val);
+      if (Number.isFinite(a1) && a1 > 0) {
+        setAmount0(formatLinkedDepositAmount(a1 / linkPrice));
+      }
+    }
   };
 
   const tickSpacing = FEE_TIERS.find(f => f.fee === fee)?.tickSpacing ?? 60;
@@ -413,7 +481,6 @@ export default function PoolPage() {
         </motion.div>
       ) : <>
         {/* ── 1. Card entrance with spring ── */}
-        <TiltCard maxTilt={7}>
           <motion.div
             className="card glow"
             layout
@@ -737,9 +804,7 @@ export default function PoolPage() {
               {loadingTx ? <span className="spinner" /> : getButtonLabel()}
             </motion.button>
           </motion.div>
-        </TiltCard></>}
-
-
+        </>}
     </div>
   );
 }

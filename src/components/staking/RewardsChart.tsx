@@ -30,6 +30,7 @@ export default function RewardsChart() {
         background: { color: 'transparent' },
         textColor: '#9ca3af',
         fontFamily: "'Inter', sans-serif",
+        attributionLogo: false,
       },
       grid: {
         vertLines: { visible: false },
