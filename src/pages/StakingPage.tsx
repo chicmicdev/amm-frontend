@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppKitAccount } from '@reown/appkit/react';
 import StakeCard from '../components/staking/StakeCard';
@@ -8,7 +8,7 @@ import RewardsChart from '../components/staking/RewardsChart';
 import TransactionTable from '../components/staking/TransactionTable';
 import ScrollReveal from '../components/common/ScrollReveal';
 import { getUserPosition, getStakingStats, postClaim, postUnstakeAll } from '../services/api/stakingService';
-import { formatStakingNumber } from '../utils/stakingFormat';
+import { canClaimStakingRewards, formatStakingNumber, STAKING_MIN_CLAIM_REWARD_HUMAN } from '../utils/stakingFormat';
 
 type SubTab = 'stake' | 'portfolio' | 'history';
 
@@ -23,19 +23,6 @@ export default function StakingPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', paddingBottom: 80 }}>
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          style: {
-            background: 'var(--bg-card)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--color-accent-border)',
-            borderRadius: 12,
-            fontSize: 14,
-          },
-        }}
-      />
-
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px' }}>
 
         {/* ── Page header ── */}
@@ -265,7 +252,15 @@ function PortfolioTab() {
                       className="btn-stake"
                       style={{ width: 'auto', padding: '9px 20px', fontSize: 13, borderRadius: 10 }}
                       onClick={() => claimMut.mutate()}
-                      disabled={claimMut.isPending}
+                      disabled={
+                        claimMut.isPending
+                        || !canClaimStakingRewards(position?.pendingRewards ?? 0)
+                      }
+                      title={
+                        !canClaimStakingRewards(position?.pendingRewards ?? 0)
+                          ? `Claim unlocks at ${STAKING_MIN_CLAIM_REWARD_HUMAN}+ ${pos.rewardSym}`
+                          : undefined
+                      }
                     >
                       Claim Rewards
                     </button>

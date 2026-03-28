@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppKitAccount } from '@reown/appkit/react';
 import toast from 'react-hot-toast';
 import { getStakingStats, getUserPosition, postClaim } from '../../services/api/stakingService';
-import { formatStakingNumber } from '../../utils/stakingFormat';
+import { canClaimStakingRewards, formatStakingNumber, STAKING_MIN_CLAIM_REWARD_HUMAN } from '../../utils/stakingFormat';
 
 function formatTotalStaked(n: number, sym: string): string {
   if (!Number.isFinite(n)) return `— ${sym}`;
@@ -150,7 +150,15 @@ export default function StatsBar() {
             if (!address) { toast.error('Connect wallet first'); return; }
             claimMut.mutate();
           }}
-          disabled={claimMut.isPending}
+          disabled={
+            claimMut.isPending
+            || !canClaimStakingRewards(position?.pendingRewards ?? 0)
+          }
+          title={
+            !canClaimStakingRewards(position?.pendingRewards ?? 0)
+              ? `Minimum ${STAKING_MIN_CLAIM_REWARD_HUMAN} ${position?.rewardSymbol ?? ''}`
+              : undefined
+          }
           style={{
             background: 'var(--color-success)',
             color: '#fff',

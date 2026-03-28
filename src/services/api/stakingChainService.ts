@@ -10,7 +10,7 @@ import { stakingPoolAbi } from '../../contracts/stakingPoolAbi';
 import { collectViemErrorText } from '../../utils/viemErrors';
 import { devError, devWarn } from '../../utils/devLog';
 import { ammWagmiConfig, getAmmPublicClient } from './ammClient';
-import { STAKING_REWARD_MODE_APR } from '../../utils/stakingFormat';
+import { STAKING_MIN_CLAIM_REWARD_HUMAN, STAKING_REWARD_MODE_APR } from '../../utils/stakingFormat';
 import { fetchTokenDecimals, fetchTokenSymbol } from './tokenMetadata';
 
 const config = ammWagmiConfig;
@@ -237,6 +237,19 @@ export async function claimOnChain(): Promise<{ txHash: `0x${string}`; paidHuman
   if (!wallet || !user) throw new Error(`Connect a wallet on chain ${CHAIN_ID}.`);
   try {
     const meta = await fetchStakingPoolMeta();
+    const pc = getAmmPublicClient();
+    const pendingWei = (await readContract(pc, {
+      address: poolAddr,
+      abi: stakingPoolAbi,
+      functionName: 'pendingRewards',
+      args: [user],
+    })) as bigint;
+    const minClaimWei = parseUnits(String(STAKING_MIN_CLAIM_REWARD_HUMAN), meta.rewardDecimals);
+    if (pendingWei < minClaimWei) {
+      throw new Error(
+        `Minimum claim is ${STAKING_MIN_CLAIM_REWARD_HUMAN} ${meta.rewardSymbol}. Accrue more rewards first.`,
+      );
+    }
     const hash = await writeContract(wallet, {
       address: poolAddr,
       abi: stakingPoolAbi,
