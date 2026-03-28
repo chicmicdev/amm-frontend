@@ -4,7 +4,6 @@ import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import { formatAddress } from '../../utils/formatUtils';
 
 const navLinks = [
-  { to: '/dashboard', label: 'Dashboard' },
   { to: '/stake', label: 'Stake' },
   { to: '/swap', label: 'Swap' },
   { to: '/pool', label: 'Pool' },
@@ -28,7 +27,7 @@ export default function Header() {
         height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
         {/* Logo */}
-        <NavLink to="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', flexShrink: 0 }}>
+        <NavLink to="/stake" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', flexShrink: 0 }}>
           <div style={{
             width: 32, height: 32, borderRadius: 10,
             background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',

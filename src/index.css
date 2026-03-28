@@ -464,6 +464,159 @@
     align-items: center;
     justify-content: space-between;
   }
+
+  /* ── Stake sub-nav ──────────────────────────────────────────────────────── */
+  .stake-subnav {
+    display: flex;
+    gap: 4px;
+    background: rgba(13, 17, 31, 0.6);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 5px;
+    width: fit-content;
+  }
+
+  .stake-subnav-tab {
+    padding: 9px 22px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+  }
+  .stake-subnav-tab:hover:not(.active) {
+    color: var(--text-primary);
+    background: rgba(99, 102, 241, 0.08);
+  }
+  .stake-subnav-tab.active {
+    background: var(--gradient-brand);
+    color: white;
+    box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
+  }
+
+  /* ── Stake tokens 2-col grid ─────────────────────────────────────────────── */
+  .stake-tokens-grid {
+    display: grid;
+    grid-template-columns: 5fr 7fr;
+    gap: 28px;
+    align-items: start;
+  }
+
+  /* ── Portfolio glass cards ───────────────────────────────────────────────── */
+  .portfolio-glass-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 28px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 0.25s, box-shadow 0.25s;
+  }
+  .portfolio-glass-card:hover {
+    border-color: var(--color-accent-border);
+    box-shadow: 0 0 0 1px var(--color-accent-border);
+  }
+
+  .portfolio-card-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-secondary);
+  }
+
+  .portfolio-card-value {
+    font-size: clamp(28px, 4vw, 42px);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+  }
+
+  /* ── Position row card ───────────────────────────────────────────────────── */
+  .position-row-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    transition: border-color 0.25s, box-shadow 0.25s;
+  }
+  .position-row-card:hover {
+    border-color: var(--color-accent-border);
+    box-shadow: 0 0 0 1px var(--color-accent-border);
+  }
+
+  .position-token-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .position-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+  }
+
+  .position-stat-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-secondary);
+    margin: 0 0 4px;
+  }
+
+  .position-stat-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .apr-chip {
+    background: var(--color-success-dim);
+    color: var(--color-success);
+    border: 1px solid var(--color-success-border);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── Section heading (shared across tabs) ───────────────────────────────── */
+  .section-heading {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    margin: 0 0 20px;
+  }
+
+  .page-heading {
+    font-size: clamp(32px, 5.5vw, 52px);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin: 0 0 10px;
+    color: var(--text-primary);
+  }
 }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
@@ -485,6 +638,25 @@
   .position-row { flex-direction: column; align-items: flex-start !important; }
   .position-actions { width: 100%; flex-shrink: unset !important; }
   .position-actions button { flex: 1; }
+
+  .stake-tokens-grid { grid-template-columns: 1fr; }
+
+  .position-row-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 20px;
+    padding: 20px;
+  }
+
+  .position-stats-grid { gap: 16px; }
+
+  .stake-subnav {
+    width: 100%;
+    overflow-x: auto;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .stake-subnav::-webkit-scrollbar { display: none; }
 }
 
 @media (max-width: 480px) {
