@@ -18,8 +18,8 @@ export const appkitModal = createAppKit({
   networks,
   projectId,
   metadata: {
-    name: 'AMM v3',
-    description: 'Concentrated Liquidity AMM — swap tokens and provide liquidity',
+    name: 'Flux Swap',
+    description: 'Flux Swap — concentrated liquidity DEX: swap tokens and provide liquidity',
     url: 'http://localhost:5173',
     icons: ['https://avatars.githubusercontent.com/u/37784886'],
   },

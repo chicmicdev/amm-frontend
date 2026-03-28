@@ -44,7 +44,10 @@ export default function RewardsChart() {
       },
       timeScale: {
         borderColor: 'rgba(31,41,55,0.4)',
-        tickMarkFormatter: (time: number) => {
+        tickMarkFormatter: (time: number | { year: number; month: number; day: number }) => {
+          if (typeof time === 'object') {
+            return `${time.day}/${time.month}`;
+          }
           const d = new Date(time * 1000);
           return `${d.getDate()}/${d.getMonth() + 1}`;
         },

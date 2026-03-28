@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import type { Token } from '../../types';
 import TokenSelector from './TokenSelector';
+import TokenIcon from './TokenIcon';
 import { formatTokenAmount } from '../../utils/formatUtils';
 
 interface Props {
@@ -20,6 +22,7 @@ export default function TokenInput({
   onAmountChange, excludeToken, readonly = false, loading = false
 }: Props) {
   const [showSelector, setShowSelector] = useState(false);
+  const [focused, setFocused] = useState(false);
 
   const handleMax = () => {
     if (balance && onAmountChange) onAmountChange(balance);
@@ -27,15 +30,28 @@ export default function TokenInput({
 
   return (
     <>
-      <div className="token-input-wrapper">
+      {/* ── 3. Input focus glow via motion.div ── */}
+      <motion.div
+        className="token-input-wrapper"
+        animate={{
+          borderColor: focused ? 'var(--accent-primary)' : 'var(--border)',
+          boxShadow: focused
+            ? '0 0 0 2px rgba(88,166,255,0.18), inset 0 0 12px rgba(88,166,255,0.04)'
+            : '0 0 0 0px rgba(88,166,255,0)',
+        }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        style={{ border: '1px solid var(--border)' }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
           <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>{label}</span>
           {balance !== undefined && (
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
               Balance: <span style={{ color: 'var(--text-primary)' }}>{formatTokenAmount(balance, 4)}</span>
               {!readonly && onAmountChange && (
-                <button
+                <motion.button
                   onClick={handleMax}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                   style={{
                     marginLeft: 6, fontSize: 11, fontWeight: 600,
                     color: 'var(--accent-primary)', background: 'rgba(88,166,255,0.1)',
@@ -43,23 +59,25 @@ export default function TokenInput({
                   }}
                 >
                   MAX
-                </button>
+                </motion.button>
               )}
             </span>
           )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
+          {/* Token badge with hover pop */}
+          <motion.button
             className="token-badge"
             onClick={() => setShowSelector(true)}
+            whileHover={{ scale: 1.04, borderColor: 'var(--accent-primary)' }}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 20 }}
           >
-            <div className="token-icon" style={{ background: token.logoColor, width: 22, height: 22, fontSize: 10 }}>
-              {token.symbol.slice(0, 3)}
-            </div>
+            <TokenIcon token={token} size="md" />
             <span>{token.symbol}</span>
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>▼</span>
-          </button>
+          </motion.button>
 
           <div style={{ flex: 1, textAlign: 'right' }}>
             {loading ? (
@@ -73,6 +91,8 @@ export default function TokenInput({
                 value={amount}
                 onChange={e => onAmountChange?.(e.target.value)}
                 readOnly={readonly}
+                onFocus={() => !readonly && setFocused(true)}
+                onBlur={() => setFocused(false)}
                 style={{
                   background: 'none', border: 'none', outline: 'none',
                   fontSize: 24, fontWeight: 600, color: 'var(--text-primary)',
@@ -83,7 +103,7 @@ export default function TokenInput({
             )}
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {showSelector && (
         <TokenSelector
