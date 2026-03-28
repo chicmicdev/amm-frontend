@@ -8,6 +8,8 @@ export const CONTRACTS = {
   SwapRouter: '0x74d1bB973A524Cd17cBEC489eA05E78Bc7201EDE',
   NonfungiblePositionManager: '0x26c03A3B131Ce8Cc590f97975C5197e5D8b7105b',
   LiquidityHelper: '0x22a2fA1c5033f2CA0B31c13AAC65216dE3728774',
+  /** `StakingPool.sol` — stake stakingToken, earn rewardToken */
+  StakingPool: '0x172A0688D35Cf30c7D8e5DA7a1dEF5aa848fB841',
 } as const;
 
 /**

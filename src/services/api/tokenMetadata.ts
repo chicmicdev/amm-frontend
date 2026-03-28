@@ -3,12 +3,13 @@
  */
 import { readContract } from 'viem/actions';
 import type { Address } from 'viem';
-import { LISTED_TOKEN_META } from '../../config/tokens';
+import { getListedTokenMeta, LISTED_TOKEN_META } from '../../config/tokens';
 import type { Token } from '../../types';
 import { erc20Abi } from '../../contracts/abis';
 import { getAmmPublicClient } from './ammClient';
 
 const decimalsCache = new Map<string, number>();
+const symbolCache = new Map<string, string>();
 
 export function cacheTokenDecimals(address: string, decimals: number): void {
   decimalsCache.set(address.toLowerCase(), decimals);
@@ -16,6 +17,36 @@ export function cacheTokenDecimals(address: string, decimals: number): void {
 
 export function getCachedTokenDecimals(address: string): number | undefined {
   return decimalsCache.get(address.toLowerCase());
+}
+
+/**
+ * ERC-20 `symbol()` when not in the static list; cached per address.
+ * Falls back to a short address if the call fails (non-standard token).
+ */
+export async function fetchTokenSymbol(address: string): Promise<string> {
+  const k = address.toLowerCase();
+  const cached = symbolCache.get(k);
+  if (cached !== undefined) return cached;
+  const listed = getListedTokenMeta(address);
+  if (listed) {
+    symbolCache.set(k, listed.symbol);
+    return listed.symbol;
+  }
+  try {
+    const pc = getAmmPublicClient();
+    const sym = (await readContract(pc, {
+      address: address as Address,
+      abi: erc20Abi,
+      functionName: 'symbol',
+    })) as string;
+    const s = typeof sym === 'string' ? sym : String(sym);
+    symbolCache.set(k, s);
+    return s;
+  } catch {
+    const fb = `${address.slice(0, 6)}…${address.slice(-4)}`;
+    symbolCache.set(k, fb);
+    return fb;
+  }
 }
 
 export async function fetchTokenDecimals(address: string): Promise<number> {

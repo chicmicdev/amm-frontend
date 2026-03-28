@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { createChart, type IChartApi, AreaSeries, type BusinessDay } from 'lightweight-charts';
 import { useAppKitAccount } from '@reown/appkit/react';
-import { getRewardsHistory } from '../../services/api/stakingService';
+import { getRewardsHistory, getStakingStats } from '../../services/api/stakingService';
 
 export default function RewardsChart() {
   const { address } = useAppKitAccount();
@@ -12,6 +12,12 @@ export default function RewardsChart() {
   const { data: history, isLoading } = useQuery({
     queryKey: ['rewardsHistory', address],
     queryFn: () => getRewardsHistory(address ?? ''),
+  });
+
+  const { data: stats } = useQuery({
+    queryKey: ['stakingStats'],
+    queryFn: getStakingStats,
+    staleTime: 30_000,
   });
 
   useEffect(() => {
@@ -102,7 +108,7 @@ export default function RewardsChart() {
         <div>
           <div style={{ fontWeight: 700, fontSize: 16 }}>Rewards Over Time</div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
-            Cumulative rewards accumulated
+            Demo trend (on-chain rewards: {stats?.rewardTokenSymbol ?? '—'}). Connect activity history indexer for live data.
           </div>
         </div>
         <span style={{

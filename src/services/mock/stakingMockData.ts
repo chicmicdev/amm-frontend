@@ -9,12 +9,22 @@ export const mockStats: StakingStats = {
   apr: 12.0,
   tvl: 2400000,
   totalStakers: 1420,
+  stakingTokenSymbol: 'TKA',
+  rewardTokenSymbol: 'TKA',
+  stakingTokenAddress: '0x0000000000000000000000000000000000000001',
+  rewardTokenAddress: '0x0000000000000000000000000000000000000001',
+  rewardMode: 0,
+  isAprMode: true,
+  rewardPerBlockHuman: 0,
 };
 
 export const mockUserPosition: UserPosition = {
   stakedAmount: 500,
+  stakedAmountDisplay: '500',
   tokenSymbol: 'TKA',
+  rewardSymbol: 'TKA',
   pendingRewards: 8.22,
+  pendingRewardsDisplay: '8.22',
   stakedSince: '2026-03-15',
   portfolioValue: 12450,
 };
