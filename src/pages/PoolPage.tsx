@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import TiltCard from '../components/common/TiltCard';
 import { useAppKitAccount } from '@reown/appkit/react';
 import { useAppKit } from '@reown/appkit/react';
 import TokenInput from '../components/common/TokenInput';
@@ -23,6 +24,8 @@ import { getTickRange, maxRangeTicksForSpacing } from '../utils/tickUtils';
 const cardSpring = {
   initial: { opacity: 0, scale: 0.95, y: 16 },
   animate: { opacity: 1, scale: 1, y: 0 },
+  whileInView: { opacity: 1, scale: 1, y: 0 },
+  viewport: { once: true, margin: '-40px' },
   transition: { type: 'spring' as const, stiffness: 300, damping: 20 },
 };
 
@@ -292,6 +295,7 @@ export default function PoolPage() {
       </motion.div>
 
       {/* ── 1. Card entrance with spring ── */}
+      <TiltCard maxTilt={7}>
       <motion.div
         className="card glow"
         layout
@@ -615,6 +619,7 @@ export default function PoolPage() {
           {loadingTx ? <span className="spinner" /> : getButtonLabel()}
         </motion.button>
       </motion.div>
+      </TiltCard>
     </div>
   );
 }

@@ -9,11 +9,29 @@ function formatTVL(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 
+function StatIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      width: 36, height: 36, borderRadius: 10,
+      background: 'var(--color-accent-dim)',
+      border: '1px solid var(--color-accent-border)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 17, flexShrink: 0,
+    }}>
+      {children}
+    </div>
+  );
+}
+
 function SkeletonCard() {
   return (
     <div className="stat-glass-card">
-      <div className="skeleton" style={{ width: 60, height: 12, marginBottom: 12 }} />
-      <div className="skeleton" style={{ width: 100, height: 28 }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+        <div className="skeleton" style={{ width: 36, height: 36, borderRadius: 10 }} />
+        <div className="skeleton" style={{ width: 70, height: 10, borderRadius: 4 }} />
+      </div>
+      <div className="skeleton" style={{ width: 110, height: 32, borderRadius: 6, marginBottom: 8 }} />
+      <div className="skeleton" style={{ width: 140, height: 10, borderRadius: 4 }} />
     </div>
   );
 }
@@ -43,63 +61,102 @@ export default function StatsBar() {
 
   const loading = statsLoading || posLoading;
 
-  const statCards = [
-    {
-      label: 'Current APR',
-      value: loading ? null : `${stats?.apr.toFixed(2)}%`,
-      valueColor: 'var(--stake-green)',
-      icon: '⚡',
-    },
-    {
-      label: 'Total Value Locked',
-      value: loading ? null : formatTVL(stats?.tvl ?? 0),
-      valueColor: 'var(--text-primary)',
-      icon: '🔒',
-    },
-    {
-      label: 'Your Staked',
-      value: loading ? null : `${position?.stakedAmount.toFixed(2)} ${position?.tokenSymbol}`,
-      valueColor: 'var(--text-primary)',
-      icon: '💎',
-    },
-    {
-      label: 'Rewards Earned',
-      value: loading ? null : `${position?.pendingRewards.toFixed(4)} ${position?.tokenSymbol}`,
-      valueColor: 'var(--stake-green)',
-      icon: '🎁',
-      action: (
+  if (loading) {
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+
+      {/* Current APR */}
+      <div className="stat-glass-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+          <StatIcon>⚡</StatIcon>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+            Current APR
+          </span>
+        </div>
+        <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--color-success)', letterSpacing: '-0.02em', marginBottom: 6 }}>
+          {stats?.apr.toFixed(2)}%
+        </div>
+        <p style={{ margin: 0, fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+          Dynamic rewards based on TVL
+        </p>
+      </div>
+
+      {/* Total Locked */}
+      <div className="stat-glass-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+          <StatIcon>🔒</StatIcon>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+            Total Locked
+          </span>
+        </div>
+        <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em', marginBottom: 6 }}>
+          {formatTVL(stats?.tvl ?? 0)}
+        </div>
+        <p style={{ margin: 0, fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+          Liquidity at quality pace
+        </p>
+      </div>
+
+      {/* Your Staked */}
+      <div className="stat-glass-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+          <StatIcon>💎</StatIcon>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+            Your Staked
+          </span>
+        </div>
+        <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em', marginBottom: 6 }}>
+          {position?.stakedAmount.toFixed(2)}{' '}
+          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-secondary)' }}>{position?.tokenSymbol}</span>
+        </div>
+        <p style={{ margin: 0, fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+          Stake more to increase share
+        </p>
+      </div>
+
+      {/* Earned */}
+      <div className="stat-glass-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+          <StatIcon>🎁</StatIcon>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+            Earned
+          </span>
+        </div>
+        <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--color-success)', letterSpacing: '-0.02em', marginBottom: 6 }}>
+          {position?.pendingRewards.toFixed(2)}{' '}
+          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-success)' }}>{position?.tokenSymbol}</span>
+        </div>
         <button
-          className="btn-claim"
           onClick={() => {
             if (!address) { toast.error('Connect wallet first'); return; }
             claimMut.mutate();
           }}
           disabled={claimMut.isPending}
-          style={{ marginTop: 10 }}
+          style={{
+            background: 'var(--color-success)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 6,
+            padding: '5px 18px',
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: claimMut.isPending ? 'not-allowed' : 'pointer',
+            opacity: claimMut.isPending ? 0.7 : 1,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+          }}
         >
           {claimMut.isPending ? '...' : 'Claim'}
         </button>
-      ),
-    },
-  ];
+      </div>
 
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-      {statCards.map((card) =>
-        loading ? (
-          <SkeletonCard key={card.label} />
-        ) : (
-          <div className="stat-glass-card" key={card.label}>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 8 }}>
-              {card.icon} {card.label}
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: card.valueColor }}>
-              {card.value}
-            </div>
-            {card.action}
-          </div>
-        )
-      )}
     </div>
   );
 }

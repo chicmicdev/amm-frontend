@@ -382,6 +382,8 @@ export default function PositionsPage() {
           variants={listVariants}
           initial="hidden"
           animate="visible"
+          whileInView="visible"
+          viewport={{ once: true, margin: '-40px' }}
         >
           <AnimatePresence>
             {filtered.map(position => (
