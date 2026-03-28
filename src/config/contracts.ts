@@ -1,6 +1,6 @@
 /**
  * Deployed contract addresses (sync with your deployment log).
- * ABIs are loaded from `artifacts 2/` — see `src/contracts/abis.ts`.
+ * ABIs are inlined in the app — see `src/contracts/abis.ts` and `src/contracts/inlinedAbis.ts`.
  */
 export const CONTRACTS = {
   WETH9: '0x5A5c039086d2EbC2104AAaD041421304DBA79c8C',
