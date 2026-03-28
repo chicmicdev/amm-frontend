@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import TiltCard from '../components/common/TiltCard';
 import DataTable from '../components/common/DataTable';
 import type { ColumnConfig } from '../components/common/DataTable';
 import { useAppKitAccount } from '@reown/appkit/react';
