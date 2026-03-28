@@ -7,7 +7,7 @@ import {
   postClaim,
   postUnstakeAll,
 } from '../services/api/stakingService';
-import { formatStakingNumber } from '../utils/stakingFormat';
+import { canClaimStakingRewards, formatStakingNumber, STAKING_MIN_CLAIM_REWARD_HUMAN } from '../utils/stakingFormat';
 import RewardsChart from '../components/staking/RewardsChart';
 
 export default function DashboardPage() {
@@ -144,7 +144,15 @@ export default function DashboardPage() {
                           className="btn-stake"
                           style={{ width: 'auto', padding: '8px 18px', fontSize: 13 }}
                           onClick={() => claimMut.mutate()}
-                          disabled={claimMut.isPending}
+                          disabled={
+                            claimMut.isPending
+                            || !canClaimStakingRewards(position?.pendingRewards ?? 0)
+                          }
+                          title={
+                            !canClaimStakingRewards(position?.pendingRewards ?? 0)
+                              ? `Claim unlocks at ${STAKING_MIN_CLAIM_REWARD_HUMAN}+ ${pos.rewardSym}`
+                              : undefined
+                          }
                         >
                           Claim Rewards
                         </button>
