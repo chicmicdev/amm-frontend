@@ -17,7 +17,7 @@ import {
   getAccount,
   getPublicClient,
 } from "wagmi/actions";
-import { CHAIN_ID, CONTRACTS } from "../../config/contracts";
+import { CHAIN_ID, CONTRACTS, GAS } from "../../config/contracts";
 import type { Position, MintParams, Token } from "../../types";
 import { getListedTokenMeta } from "../../config/tokens";
 import {
@@ -258,6 +258,9 @@ export async function addLiquidity(
         abi: erc20Abi,
         functionName: "approve",
         args: [CONTRACTS.NonfungiblePositionManager as Address, maxUint256],
+        gas: GAS.limits.approve,
+        maxFeePerGas: GAS.maxFeePerGas,
+        maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
       });
       const ar = await waitForTransactionReceipt(config, {
         hash: approveHash,
@@ -302,6 +305,9 @@ export async function addLiquidity(
       functionName: "mint",
       args: [mintArgs],
       account: user,
+      gas: GAS.limits.mint,
+      maxFeePerGas: GAS.maxFeePerGas,
+      maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
     });
     hash = await walletClient.writeContract(request);
     devLog("tx/mint", "submitted", { hash });
@@ -390,6 +396,9 @@ export async function removeLiquidity(
         deadline,
       },
     ],
+    gas: GAS.limits.decreaseLiquidity,
+    maxFeePerGas: GAS.maxFeePerGas,
+    maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
   });
   const decRc = await waitForTransactionReceipt(config, {
     hash: decHash,
@@ -413,6 +422,9 @@ export async function removeLiquidity(
         amount1Max: 2n ** 128n - 1n,
       },
     ],
+    gas: GAS.limits.collect,
+    maxFeePerGas: GAS.maxFeePerGas,
+    maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
   });
   const colRc = await waitForTransactionReceipt(config, {
     hash: collectHash,
@@ -440,6 +452,9 @@ export async function removeLiquidity(
         abi: positionManagerAbi,
         functionName: "burn",
         args: [BigInt(tokenId)],
+        gas: GAS.limits.burn,
+        maxFeePerGas: GAS.maxFeePerGas,
+        maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
       });
       const burnRc = await waitForTransactionReceipt(config, {
         hash: burnHash,
@@ -477,6 +492,9 @@ export async function collectFees(
         amount1Max: 2n ** 128n - 1n,
       },
     ],
+    gas: GAS.limits.collect,
+    maxFeePerGas: GAS.maxFeePerGas,
+    maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
   });
   const cr = await waitForTransactionReceipt(config, {
     hash,
@@ -533,6 +551,9 @@ export async function increaseLiquidity(
         abi: erc20Abi,
         functionName: "approve",
         args: [CONTRACTS.NonfungiblePositionManager as Address, maxUint256],
+        gas: GAS.limits.approve,
+        maxFeePerGas: GAS.maxFeePerGas,
+        maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
       });
       await waitForTransactionReceipt(config, {
         hash: approveHash,
@@ -560,6 +581,9 @@ export async function increaseLiquidity(
         deadline,
       },
     ],
+    gas: GAS.limits.increaseLiquidity,
+    maxFeePerGas: GAS.maxFeePerGas,
+    maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
   });
   const ir = await waitForTransactionReceipt(config, {
     hash,

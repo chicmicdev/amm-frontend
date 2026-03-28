@@ -1,125 +1,33 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useAppKitAccount } from '@reown/appkit/react';
 import { getStakingStats, getUserPosition, postStake, postUnstake } from '../../services/api/stakingService';
+import { useTokens } from '../../context/TokensContext';
+import TokenSelector from '../common/TokenSelector';
+import TokenIcon from '../common/TokenIcon';
+import type { Token } from '../../types';
 
-const TOKENS = [
-  { symbol: 'TKA', color: 'var(--color-accent-light)' },
-  { symbol: 'TKB', color: 'var(--color-accent-alt)' },
-];
 const APR = 12;
-
-function TokenDropdown({
-  selected,
-  onChange,
-}: {
-  selected: string;
-  onChange: (t: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  const current = TOKENS.find(t => t.symbol === selected) ?? TOKENS[0];
-
-  return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: 'var(--bg-input)',
-          border: `1px solid ${open ? 'var(--color-accent)' : 'var(--border)'}`,
-          borderRadius: 'var(--radius-md)',
-          padding: '13px 16px',
-          cursor: 'pointer',
-          transition: 'border-color 0.2s',
-          color: 'var(--text-primary)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: '50%',
-            background: `${current.color}22`,
-            border: `1px solid ${current.color}44`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 12, fontWeight: 800, color: current.color,
-          }}>
-            {current.symbol.slice(0, 2)}
-          </div>
-          <span style={{ fontWeight: 700, fontSize: 15 }}>{current.symbol}</span>
-        </div>
-        <svg
-          width="16" height="16" viewBox="0 0 24 24" fill="none"
-          stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round"
-          style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}
-        >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
-
-      {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
-          background: 'var(--bg-card)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-md)',
-          overflow: 'hidden',
-          zIndex: 10,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-        }}>
-          {TOKENS.map(t => (
-            <button
-              key={t.symbol}
-              onClick={() => { onChange(t.symbol); setOpen(false); }}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                padding: '11px 16px', background: 'none', border: 'none',
-                cursor: 'pointer', color: 'var(--text-primary)', fontSize: 14, fontWeight: 600,
-                transition: 'background 0.15s',
-              }}
-              onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = 'var(--bg-secondary)')}
-              onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = 'none')}
-            >
-              <div style={{
-                width: 24, height: 24, borderRadius: '50%',
-                background: `${t.color}22`, border: `1px solid ${t.color}44`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 10, fontWeight: 800, color: t.color,
-              }}>
-                {t.symbol.slice(0, 2)}
-              </div>
-              {t.symbol}
-              {t.symbol === selected && (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="2.5" strokeLinecap="round" style={{ marginLeft: 'auto' }}>
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function StakeCard() {
   const { address } = useAppKitAccount();
   const qc = useQueryClient();
+  const { tokens } = useTokens();
   const [mode, setMode] = useState<'stake' | 'unstake'>('stake');
   const [amount, setAmount] = useState('');
-  const [token, setToken] = useState('TKA');
+  const [selectedToken, setSelectedToken] = useState<Token | undefined>(undefined);
+  const [showSelector, setShowSelector] = useState(false);
+
+  useEffect(() => {
+    if (tokens.length === 0) return;
+    setSelectedToken(prev =>
+      prev ? (tokens.find(t => t.address.toLowerCase() === prev.address.toLowerCase()) ?? tokens[0]) : tokens[0]
+    );
+  }, [tokens]);
+
+  const token = selectedToken?.symbol ?? '';
 
   const { data: stats } = useQuery({ queryKey: ['stakingStats'], queryFn: getStakingStats });
   const { data: position } = useQuery({
@@ -189,7 +97,26 @@ export default function StakeCard() {
         <label style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
           Select Asset
         </label>
-        <TokenDropdown selected={token} onChange={t => { setToken(t); setAmount(''); }} />
+        <motion.button
+          className="token-badge"
+          onClick={() => setShowSelector(true)}
+          whileHover={{ scale: 1.04, borderColor: 'var(--accent-primary)' }}
+          whileTap={{ scale: 0.97 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+          style={{ width: '100%', justifyContent: 'flex-start', padding: '13px 16px', borderRadius: 'var(--radius-md)', gap: 12 }}
+        >
+          {selectedToken && <TokenIcon token={selectedToken} size="md" />}
+          <span style={{ fontWeight: 700, fontSize: 15 }}>{selectedToken?.symbol ?? 'Select token'}</span>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginLeft: 'auto' }}>▼</span>
+        </motion.button>
+
+        {showSelector && selectedToken && (
+          <TokenSelector
+            selected={selectedToken}
+            onSelect={t => { setSelectedToken(t); setAmount(''); }}
+            onClose={() => setShowSelector(false)}
+          />
+        )}
       </div>
 
       {/* Amount */}
