@@ -129,7 +129,7 @@ export default function PoolPage() {
   const validTickUpper = Math.round(tickUpper / tickSpacing) * tickSpacing;
 
   return (
-    <div>
+    <div className="page-narrow">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Add Liquidity</h1>
       </div>

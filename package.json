@@ -13,9 +13,12 @@
     "@reown/appkit": "^1.8.19",
     "@reown/appkit-adapter-wagmi": "^1.8.19",
     "@tanstack/react-query": "^5.95.2",
+    "axios": "^1.14.0",
     "ethers": "^6.16.0",
+    "lightweight-charts": "^5.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.13.2",
     "viem": "^2.47.6",
     "wagmi": "^3.6.0"
@@ -26,7 +29,7 @@
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
+    "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.27",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
@@ -35,6 +38,6 @@
     "tailwindcss": "^4.2.2",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.57.0",
-    "vite": "^8.0.1"
+    "vite": "^5.4.21"
   }
 }

@@ -28,12 +28,11 @@ export default function SwapPage() {
   const [tokenOut, setTokenOut] = useState<Token>(DEFAULT_TOKEN_OUT);
   const [amountIn, setAmountIn] = useState('');
   const [amountOut, setAmountOut] = useState('');
-  const [fee, setFee] = useState(3000);
+  const [fee] = useState(3000);
   const [slippage, setSlippage] = useState(0.5);
   const [quote, setQuote] = useState<SwapQuote | null>(null);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingSwap, setLoadingSwap] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [balanceIn, setBalanceIn] = useState('0');
   const [balanceOut, setBalanceOut] = useState('0');
 
@@ -108,7 +107,7 @@ export default function SwapPage() {
   );
 
   return (
-    <div>
+    <div className="page-narrow">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, lineHeight: 1.2 }}>Swap</h1>
@@ -173,7 +172,7 @@ export default function SwapPage() {
         <SlippageSettings
           slippage={slippage}
           onChange={setSlippage}
-          onClose={() => setShowSettings(false)}
+          onClose={() => {}}
         />
       </div>
 

@@ -238,7 +238,7 @@ export default function PositionsPage() {
 
   if (!isConnected) {
     return (
-      <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+      <div className="page-narrow" style={{ textAlign: 'center', padding: '60px 20px' }}>
         <div style={{ fontSize: 48, marginBottom: 16 }}>🔗</div>
         <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Connect Your Wallet</h2>
         <p style={{ color: 'var(--text-secondary)', marginBottom: 24, fontSize: 15 }}>
@@ -252,7 +252,7 @@ export default function PositionsPage() {
   }
 
   return (
-    <div>
+    <div className="page-narrow">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>My Positions</h1>
         <button
