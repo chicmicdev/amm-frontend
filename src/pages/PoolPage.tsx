@@ -18,6 +18,8 @@ import { recordTxHistory } from '../services/history/txHistoryStorage';
 const cardSpring = {
   initial: { opacity: 0, scale: 0.95, y: 16 },
   animate: { opacity: 1, scale: 1, y: 0 },
+  whileInView: { opacity: 1, scale: 1, y: 0 },
+  viewport: { once: true, margin: '-40px' },
   transition: { type: 'spring' as const, stiffness: 300, damping: 20 },
 };
 

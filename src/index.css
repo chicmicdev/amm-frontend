@@ -667,3 +667,14 @@
   .hero-title  { font-size: clamp(24px, 9vw, 40px); }
   .hero-section p { font-size: 15px !important; }
 }
+
+/* ── Landing page responsive ───────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .landing-nav-links { display: none; }
+  .landing-stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .landing-features-grid { grid-template-columns: 1fr !important; }
+}
+
+@media (max-width: 480px) {
+  .landing-stats-grid { grid-template-columns: 1fr !important; }
+}

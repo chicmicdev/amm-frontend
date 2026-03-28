@@ -7,6 +7,7 @@ import StakeCard from '../components/staking/StakeCard';
 import StatsBar from '../components/staking/StatsBar';
 import RewardsChart from '../components/staking/RewardsChart';
 import TransactionTable from '../components/staking/TransactionTable';
+import ScrollReveal from '../components/common/ScrollReveal';
 import { getUserPosition, getStakingStats, postClaim, postUnstake } from '../services/api/stakingService';
 
 type SubTab = 'stake' | 'portfolio' | 'history';
@@ -90,8 +91,12 @@ function StakeTokensTab() {
 
       {/* 2-col: stake card + stats */}
       <div className="stake-tokens-grid">
-        <StakeCard />
-        <StatsBar />
+        <ScrollReveal delay={0.05} variant="scaleUp">
+          <StakeCard />
+        </ScrollReveal>
+        <ScrollReveal delay={0.18} variant="scaleUp">
+          <StatsBar />
+        </ScrollReveal>
       </div>
     </>
   );
@@ -160,14 +165,16 @@ function PortfolioTab() {
     <>
       {/* Summary cards */}
       <div className="grid-3col" style={{ marginBottom: 40 }}>
-        {summaryCards.map((c) => (
-          <div key={c.label} className="portfolio-glass-card">
-            <span className="portfolio-card-label">{c.label}</span>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span className="portfolio-card-value" style={{ color: c.valueColor }}>{c.value}</span>
-              {c.unit && <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-success)' }}>{c.unit}</span>}
+        {summaryCards.map((c, i) => (
+          <ScrollReveal key={c.label} delay={i * 0.1} variant="scaleUp">
+            <div className="portfolio-glass-card">
+              <span className="portfolio-card-label">{c.label}</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span className="portfolio-card-value" style={{ color: c.valueColor }}>{c.value}</span>
+                {c.unit && <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-success)' }}>{c.unit}</span>}
+              </div>
             </div>
-          </div>
+          </ScrollReveal>
         ))}
       </div>
 
@@ -189,8 +196,9 @@ function PortfolioTab() {
             ? Array.from({ length: 2 }).map((_, i) => (
                 <div key={i} className="skeleton" style={{ height: 100, borderRadius: 16 }} />
               ))
-            : positions.map((pos) => (
-                <div key={pos.token} className="position-row-card">
+            : positions.map((pos, i) => (
+                <ScrollReveal key={pos.token} delay={i * 0.12}>
+                <div className="position-row-card">
 
                   {/* Token icon + name */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 0 }}>
@@ -245,15 +253,18 @@ function PortfolioTab() {
                     </button>
                   </div>
                 </div>
+                </ScrollReveal>
               ))}
         </div>
       </section>
 
       {/* Rewards chart */}
-      <section>
-        <SectionHeader title="Rewards Over Time" subtitle="Cumulative rewards over the last 30 days" />
-        <RewardsChart />
-      </section>
+      <ScrollReveal delay={0.05}>
+        <section>
+          <SectionHeader title="Rewards Over Time" subtitle="Cumulative rewards over the last 30 days" />
+          <RewardsChart />
+        </section>
+      </ScrollReveal>
     </>
   );
 }
