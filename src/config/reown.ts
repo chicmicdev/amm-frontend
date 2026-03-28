@@ -1,11 +1,11 @@
 import { createAppKit } from '@reown/appkit/react';
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi';
-import { mainnet, sepolia, hardhat } from '@reown/appkit/networks';
+import { mainnet, sepolia, hardhat, polygonAmoy } from '@reown/appkit/networks';
 import type { AppKitNetwork } from '@reown/appkit/networks';
 
 export const projectId = 'a1f319ce3901f51cf8c063f7fbe74b6a';
 
-export const networks: [AppKitNetwork, ...AppKitNetwork[]] = [mainnet, sepolia, hardhat];
+export const networks: [AppKitNetwork, ...AppKitNetwork[]] = [mainnet, sepolia, hardhat, polygonAmoy];
 
 export const wagmiAdapter = new WagmiAdapter({
   networks,
