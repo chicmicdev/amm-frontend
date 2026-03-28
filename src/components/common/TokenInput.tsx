@@ -15,11 +15,17 @@ interface Props {
   excludeToken?: Token;
   readonly?: boolean;
   loading?: boolean;
+  /** Shown when `amount` is empty (readonly outputs use "—" so "0.0" is not mistaken for a quote). */
+  placeholder?: string;
+  /** Increment after a successful on-chain action (e.g. swap) to play a short balance refresh animation. */
+  balancePulseId?: number;
 }
 
 export default function TokenInput({
   label, token, amount, balance, onTokenChange,
-  onAmountChange, excludeToken, readonly = false, loading = false
+  onAmountChange, excludeToken, readonly = false, loading = false,
+  placeholder = '0.0',
+  balancePulseId = 0,
 }: Props) {
   const [showSelector, setShowSelector] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -46,7 +52,39 @@ export default function TokenInput({
           <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>{label}</span>
           {balance !== undefined && (
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-              Balance: <span style={{ color: 'var(--text-primary)' }}>{formatTokenAmount(balance, 4)}</span>
+              Balance:{' '}
+              {balancePulseId > 0 ? (
+                <motion.span
+                  key={balancePulseId}
+                  style={{
+                    display: 'inline-block',
+                    color: 'var(--text-primary)',
+                    fontWeight: 600,
+                    transformOrigin: 'right center',
+                  }}
+                  initial={{ scale: 0.86, opacity: 0.45 }}
+                  animate={{
+                    scale: 1,
+                    opacity: 1,
+                    textShadow: [
+                      '0 0 0px transparent',
+                      '0 0 14px rgba(88, 166, 255, 0.35)',
+                      '0 0 0px transparent',
+                    ],
+                  }}
+                  transition={{
+                    scale: { type: 'spring', stiffness: 420, damping: 22, mass: 0.72 },
+                    opacity: { duration: 0.35, ease: 'easeOut' },
+                    textShadow: { duration: 0.55, ease: 'easeOut', times: [0, 0.45, 1] },
+                  }}
+                >
+                  {formatTokenAmount(balance, 4)}
+                </motion.span>
+              ) : (
+                <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                  {formatTokenAmount(balance, 4)}
+                </span>
+              )}
               {!readonly && onAmountChange && (
                 <motion.button
                   onClick={handleMax}
@@ -86,8 +124,9 @@ export default function TokenInput({
               </div>
             ) : (
               <input
-                type="number"
-                placeholder="0.0"
+                type={readonly ? 'text' : 'number'}
+                inputMode="decimal"
+                placeholder={placeholder}
                 value={amount}
                 onChange={e => onAmountChange?.(e.target.value)}
                 readOnly={readonly}

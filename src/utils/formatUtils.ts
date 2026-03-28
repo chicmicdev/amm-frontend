@@ -21,6 +21,24 @@ export function formatCompactUSD(value: number): string {
   return formatUSD(value);
 }
 
+import { formatUnits as viemFormatUnits } from 'viem';
+
+/**
+ * Format a token amount from wei (bigint) for display without converting the full value to JS Number
+ * (avoids precision loss and Infinity for large swaps).
+ */
+export function formatBigintTokenAmount(value: bigint, tokenDecimals: number, maxFractionDigits = 12): string {
+  if (value === 0n) return '0';
+  let s = viemFormatUnits(value, tokenDecimals);
+  const neg = s.startsWith('-');
+  if (neg) s = s.slice(1);
+  const [whole, fracRaw = ''] = s.split('.');
+  const fracTrim = fracRaw.slice(0, maxFractionDigits).replace(/0+$/, '');
+  const w = whole || '0';
+  const out = fracTrim.length > 0 ? `${w}.${fracTrim}` : w;
+  return neg ? `-${out}` : out;
+}
+
 export function formatTokenAmount(amount: string | number, decimals = 4): string {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount;
   if (isNaN(num)) return '0';

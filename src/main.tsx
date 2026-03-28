@@ -6,6 +6,7 @@ import './index.css';
 import './config/reown'; // initializes AppKit modal
 import App from './App';
 import { wagmiAdapter } from './config/reown';
+import { TokensProvider } from './context/TokensContext';
 
 const queryClient = new QueryClient();
 
@@ -13,7 +14,9 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <WagmiProvider config={wagmiAdapter.wagmiConfig}>
       <QueryClientProvider client={queryClient}>
-        <App />
+        <TokensProvider>
+          <App />
+        </TokensProvider>
       </QueryClientProvider>
     </WagmiProvider>
   </StrictMode>

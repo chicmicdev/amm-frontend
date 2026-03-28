@@ -44,9 +44,62 @@ export function getAmountsForLiquidity(
   return { amount0: 0n, amount1: getAmount1ForLiquidity(a, b, liquidity) };
 }
 
-/** Human price token1 per 1 token0 from sqrtPriceX96 (avoids float overflow on large Q64.96 values). */
+/**
+ * Raw on-chain ratio: token1 base units per 1 token0 base unit (from sqrtPriceX96).
+ * Not human-readable when token0/token1 use different decimals.
+ */
 export function sqrtPriceX96ToPriceToken1PerToken0(sqrtPriceX96: bigint): number {
   if (sqrtPriceX96 === 0n) return 0;
   const scaled = (sqrtPriceX96 * sqrtPriceX96 * 10n ** 18n) / 2n ** 192n;
   return Number(scaled) / 1e18;
+}
+
+/** Human price: how many whole token1 per 1 whole token0 (e.g. WETH per USDC). */
+export function sqrtPriceX96ToHumanPriceToken1PerToken0(
+  sqrtPriceX96: bigint,
+  decimalsToken0: number,
+  decimalsToken1: number,
+): number {
+  const raw = sqrtPriceX96ToPriceToken1PerToken0(sqrtPriceX96);
+  return raw * 10 ** (decimalsToken0 - decimalsToken1);
+}
+
+/** Integer sqrt (Newton) — matches `frontend-integration-test.mjs` / Uniswap `encodeSqrtRatioX96`. */
+function sqrtBigInt(n: bigint): bigint {
+  if (n < 0n) throw new Error('sqrt negative');
+  if (n < 2n) return n;
+  let x = n;
+  let y = (x + 1n) / 2n;
+  while (y < x) {
+    x = y;
+    y = (n / x + x) / 2n;
+  }
+  return x;
+}
+
+/**
+ * sqrt( (amount1 * 2^192) / amount0 ) — on-chain `initialize` format (amounts are raw base units).
+ * @see AMM_v3-main/scripts/frontend-integration-test.mjs `encodeSqrtRatioX96`
+ */
+export function encodeSqrtRatioX96(amount1: bigint, amount0: bigint): bigint {
+  if (amount0 <= 0n || amount1 <= 0n) return 0n;
+  return sqrtBigInt((amount1 << 192n) / amount0);
+}
+
+/**
+ * Inverse of {@link sqrtPriceX96ToHumanPriceToken1PerToken0} for pool `initialize`.
+ * Uses bigint ratio (same math as integration test: 1 whole token0 vs `humanPrice` whole token1).
+ */
+export function humanPriceToken1PerToken0ToSqrtPriceX96(
+  humanPrice: number,
+  decimalsToken0: number,
+  decimalsToken1: number,
+): bigint {
+  if (!(humanPrice > 0) || !Number.isFinite(humanPrice)) return 0n;
+  const amount0 = 10n ** BigInt(decimalsToken0);
+  const scaled = humanPrice * 10 ** decimalsToken1;
+  if (!Number.isFinite(scaled) || scaled <= 0) return 0n;
+  const amount1 = BigInt(Math.floor(scaled + 1e-12));
+  if (amount1 <= 0n) return 0n;
+  return encodeSqrtRatioX96(amount1, amount0);
 }

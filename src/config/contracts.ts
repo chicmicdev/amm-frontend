@@ -1,11 +1,21 @@
+/**
+ * Deployed contract addresses (sync with your deployment log).
+ * ABIs are loaded from `artifacts 2/` — see `src/contracts/abis.ts`.
+ */
 export const CONTRACTS = {
-  Factory: '0x0B306BF915C4d645ff596e518fAf3F9669b97016',
-  SwapRouter: '0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1',
-  NonfungiblePositionManager: '0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE',
-  WETH9: '0x9A676e781A523b5d0C0e43731313A708CB607508',
+  WETH9: '0x5A5c039086d2EbC2104AAaD041421304DBA79c8C',
+  Factory: '0x37874728AA16Cc3cFa4196612071fc8129AF8e05',
+  SwapRouter: '0x74d1bB973A524Cd17cBEC489eA05E78Bc7201EDE',
+  NonfungiblePositionManager: '0x26c03A3B131Ce8Cc590f97975C5197e5D8b7105b',
+  LiquidityHelper: '0x22a2fA1c5033f2CA0B31c13AAC65216dE3728774',
 } as const;
 
-export const CHAIN_ID = 31337;
+/**
+ * Chain where the above contracts are deployed.
+ * Polygon Amoy testnet (80002). For Hardhat local, use 31337 and matching addresses.
+ * Optional RPC override: `VITE_POLYGON_AMOY_RPC` in `.env` (see `config/reown.ts`).
+ */
+export const CHAIN_ID = 80_002;
 
 export const FEE_TIERS = [
   { fee: 500, label: '0.05%', tickSpacing: 10, description: 'Best for stable pairs' },

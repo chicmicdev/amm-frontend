@@ -1,5 +1,4 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Toaster } from 'react-hot-toast';
 import toast from 'react-hot-toast';
 import { useAppKitAccount } from '@reown/appkit/react';
 import { getUserPosition, getStakingStats, postClaim, postUnstake } from '../services/api/stakingService';
@@ -46,13 +45,6 @@ export default function DashboardPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--stake-bg)', paddingBottom: 60 }}>
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          style: { background: '#1c2128', color: '#e6edf3', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 12, fontSize: 14 },
-        }}
-      />
-
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '40px 24px 0' }}>
         <h1 style={{ fontSize: 32, fontWeight: 800, marginBottom: 6 }}>Dashboard</h1>
         <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 32 }}>Your staking portfolio at a glance</p>

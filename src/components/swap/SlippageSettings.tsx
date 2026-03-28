@@ -4,7 +4,7 @@ interface Props {
   onClose: () => void;
 }
 
-const PRESETS = [0.1, 0.5, 1.0];
+const PRESETS = [0.5, 1.0, 2.0];
 
 export default function SlippageSettings({ slippage, onChange, onClose }: Props) {
   const isCustom = !PRESETS.includes(slippage);

@@ -37,3 +37,10 @@ export function priceToSqrtPriceX96(price: number): bigint {
 export function isInRange(currentTick: number, tickLower: number, tickUpper: number): boolean {
   return currentTick >= tickLower && currentTick < tickUpper;
 }
+
+/** Widest tick range allowed for a pool with this spacing (aligned to MIN_TICK / MAX_TICK). */
+export function maxRangeTicksForSpacing(tickSpacing: number): { tickLower: number; tickUpper: number } {
+  const tickLower = Math.ceil(MIN_TICK / tickSpacing) * tickSpacing;
+  const tickUpper = Math.floor(MAX_TICK / tickSpacing) * tickSpacing;
+  return { tickLower, tickUpper };
+}

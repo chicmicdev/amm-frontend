@@ -76,12 +76,6 @@ export interface PoolStats {
 
 export type FEE_TIER = 500 | 3000 | 10000;
 
-export interface ToastMessage {
-  id: string;
-  type: 'success' | 'error' | 'info';
-  message: string;
-}
-
 export interface TransactionResult {
   hash: string;
   status: 'pending' | 'success' | 'failed';

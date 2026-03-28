@@ -1,18 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppKitAccount } from '@reown/appkit/react';
 import { useAppKit } from '@reown/appkit/react';
 import TokenInput from '../components/common/TokenInput';
 import type { Token, Pool, PoolStats } from '../types';
-import { DEFAULT_TOKEN_IN, DEFAULT_TOKEN_OUT } from '../config/tokens';
-import { FEE_TIERS } from '../config/contracts';
-import { getPool, getPoolStats, getTokenBalance } from '../services/api/poolService';
+import { useTokens } from '../context/TokensContext';
+import { FEE_TIERS, CONTRACT_ERRORS } from '../config/contracts';
+import {
+  ensurePoolCreatedAndInitialized,
+  getPool,
+  getPoolStats,
+  getTokenBalance,
+} from '../services/api/poolService';
+import { humanPriceToken1PerToken0ToSqrtPriceX96 } from '../utils/liquidityAmounts';
 import { addLiquidity } from '../services/api/positionService';
 import { useToast } from '../context/ToastContext';
-import { getTickRange } from '../utils/tickUtils';
 import { formatCompactUSD, formatNumber, shortenTxHash } from '../utils/formatUtils';
-import { CONTRACT_ERRORS } from '../config/contracts';
 import { recordTxHistory } from '../services/history/txHistoryStorage';
+import { getTickRange, maxRangeTicksForSpacing } from '../utils/tickUtils';
 
 // ─── spring variants ────────────────────────────────────────────────────────
 const cardSpring = {
@@ -30,15 +35,19 @@ function resolveError(err: unknown): string {
   return msg;
 }
 
-const FULL_RANGE_MULTIPLIER = 10;
-
 export default function PoolPage() {
   const { isConnected, address } = useAppKitAccount();
   const { open } = useAppKit();
   const { showToast } = useToast();
+  const { tokens } = useTokens();
 
-  const [token0, setToken0] = useState<Token>(DEFAULT_TOKEN_IN);
-  const [token1, setToken1] = useState<Token>(DEFAULT_TOKEN_OUT);
+  const [token0, setToken0] = useState<Token>(() => tokens[0]);
+  const [token1, setToken1] = useState<Token>(() => tokens[1]);
+
+  useEffect(() => {
+    setToken0(prev => tokens.find(t => t.address === prev.address) ?? tokens[0] ?? prev);
+    setToken1(prev => tokens.find(t => t.address === prev.address) ?? tokens[1] ?? prev);
+  }, [tokens]);
   const [fee, setFee] = useState(3000);
   const [amount0, setAmount0] = useState('');
   const [amount1, setAmount1] = useState('');
@@ -50,6 +59,11 @@ export default function PoolPage() {
   const [loadingTx, setLoadingTx] = useState(false);
   const [balance0, setBalance0] = useState('0');
   const [balance1, setBalance1] = useState('0');
+  /** When true, mint uses max usable ticks for this fee tier (matches common "full range"). */
+  const [fullRange, setFullRange] = useState(false);
+  const [poolMode, setPoolMode] = useState<'existing' | 'new'>('existing');
+  /** Human: Token B per Token A (same convention as min/max range inputs). Used when creating or initializing a pool. */
+  const [initialPrice, setInitialPrice] = useState('1');
 
   useEffect(() => {
     setLoadingPool(true);
@@ -59,13 +73,28 @@ export default function PoolPage() {
     ]).then(([p, s]) => {
       setPool(p);
       setStats(s);
-      if (p) {
-        const currentPrice = p.price;
-        setPriceLower((currentPrice * 0.9).toFixed(4));
-        setPriceUpper((currentPrice * 1.1).toFixed(4));
+      if (p && BigInt(p.sqrtPriceX96) !== 0n) {
+        const uiP =
+          p.token0.address.toLowerCase() === token0.address.toLowerCase()
+            ? p.price
+            : 1 / p.price;
+        setPriceLower((uiP * 0.9).toFixed(4));
+        setPriceUpper((uiP * 1.1).toFixed(4));
       }
     }).finally(() => setLoadingPool(false));
   }, [token0, token1, fee]);
+
+  const poolInitialized = pool !== null && BigInt(pool.sqrtPriceX96) !== 0n;
+  const needBootstrap = poolMode === 'new' && !poolInitialized;
+
+  useEffect(() => {
+    if (loadingPool) return;
+    if (poolMode !== 'new' || poolInitialized) return;
+    const p = parseFloat(initialPrice);
+    if (!Number.isFinite(p) || p <= 0) return;
+    setPriceLower((p * 0.9).toFixed(4));
+    setPriceUpper((p * 1.1).toFixed(4));
+  }, [pool, loadingPool, initialPrice, poolMode, poolInitialized, token0.address, token1.address]);
 
   useEffect(() => {
     if (isConnected && address) {
@@ -74,37 +103,107 @@ export default function PoolPage() {
     }
   }, [isConnected, address, token0, token1]);
 
+  useEffect(() => {
+    setFullRange(false);
+  }, [token0.address, token1.address, fee]);
+
+  const linkPrice = useMemo(() => {
+    if (poolInitialized && pool) {
+      const match = pool.token0.address.toLowerCase() === token0.address.toLowerCase();
+      return match ? pool.price : 1 / pool.price;
+    }
+    const ip = parseFloat(initialPrice);
+    if (poolMode === 'new' && Number.isFinite(ip) && ip > 0) return ip;
+    return null;
+  }, [pool, poolInitialized, token0.address, initialPrice, poolMode]);
+
   const handleAmount0Change = (val: string) => {
     setAmount0(val);
-    if (pool && val && parseFloat(val) > 0)
-      setAmount1((parseFloat(val) * pool.price).toFixed(6));
+    if (linkPrice !== null && val && parseFloat(val) > 0)
+      setAmount1((parseFloat(val) * linkPrice).toFixed(6));
   };
 
   const handleAmount1Change = (val: string) => {
     setAmount1(val);
-    if (pool && val && parseFloat(val) > 0)
-      setAmount0((parseFloat(val) / pool.price).toFixed(6));
+    if (linkPrice !== null && val && parseFloat(val) > 0)
+      setAmount0((parseFloat(val) / linkPrice).toFixed(6));
   };
+
+  const tickSpacing = FEE_TIERS.find(f => f.fee === fee)?.tickSpacing ?? 60;
+
+  const { tickLower, tickUpper, ticksReady } = useMemo(() => {
+    if (fullRange) return { ...maxRangeTicksForSpacing(tickSpacing), ticksReady: true as const };
+    const lo = parseFloat(priceLower);
+    const hi = parseFloat(priceUpper);
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo <= 0 || hi <= 0 || lo >= hi) {
+      return { tickLower: 0, tickUpper: 0, ticksReady: false as const };
+    }
+    const r = getTickRange(fee, lo, hi);
+    return { tickLower: r.tickLower, tickUpper: r.tickUpper, ticksReady: true as const };
+  }, [fullRange, tickSpacing, fee, priceLower, priceUpper]);
+
+  const currentPrice = linkPrice ?? 1;
+  const pl = parseFloat(priceLower);
+  const pu = parseFloat(priceUpper);
+  const rangePricesValid =
+    fullRange || (Number.isFinite(pl) && Number.isFinite(pu) && pl > 0 && pu > 0 && pl < pu);
+  const inRange =
+    fullRange
+    || (linkPrice !== null
+      && Number.isFinite(pl)
+      && Number.isFinite(pu)
+      && pl <= currentPrice
+      && currentPrice <= pu);
 
   const handleSetFullRange = () => {
-    if (pool) {
-      setPriceLower((pool.price / FULL_RANGE_MULTIPLIER).toFixed(6));
-      setPriceUpper((pool.price * FULL_RANGE_MULTIPLIER).toFixed(6));
-    }
+    setFullRange(true);
   };
-
-  const { tickLower, tickUpper } = pool
-    ? getTickRange(fee, parseFloat(priceLower) || 0.001, parseFloat(priceUpper) || 1000)
-    : { tickLower: -887220, tickUpper: 887220 };
-
-  const currentPrice = pool?.price ?? 1;
-  const inRange = parseFloat(priceLower) <= currentPrice && currentPrice <= parseFloat(priceUpper);
 
   const handleAddLiquidity = async () => {
     if (!isConnected) { open(); return; }
     if (!amount0 || !amount1) return;
+    if (!rangePricesValid) {
+      showToast('error', 'Set a valid price range (min must be below max) or tap Full range.');
+      return;
+    }
+    if (!(tickLower < tickUpper)) {
+      showToast('error', 'Invalid ticks for this range. Widen min/max price or use Full range.');
+      return;
+    }
     setLoadingTx(true);
     try {
+      if (needBootstrap) {
+        const ip = parseFloat(initialPrice);
+        if (!Number.isFinite(ip) || ip <= 0) {
+          showToast('error', 'Set a valid starting price (Token B per Token A).');
+          setLoadingTx(false);
+          return;
+        }
+        const lo =
+          token0.address.toLowerCase() < token1.address.toLowerCase() ? token0 : token1;
+        const hi =
+          token0.address.toLowerCase() < token1.address.toLowerCase() ? token1 : token0;
+        const aIsLo = token0.address.toLowerCase() === lo.address.toLowerCase();
+        const chainHuman1Per0 = aIsLo ? ip : 1 / ip;
+        const sqrtX96 = humanPriceToken1PerToken0ToSqrtPriceX96(
+          chainHuman1Per0,
+          lo.decimals,
+          hi.decimals,
+        );
+        if (sqrtX96 === 0n) {
+          showToast('error', 'Could not derive starting price — try a different value.');
+          setLoadingTx(false);
+          return;
+        }
+        showToast('info', 'Creating or initializing pool...');
+        await ensurePoolCreatedAndInitialized(token0.address, token1.address, fee, sqrtX96);
+        const [freshPool, freshStats] = await Promise.all([
+          getPool(token0.address, token1.address, fee),
+          getPoolStats(token0.address, token1.address, fee),
+        ]);
+        setPool(freshPool);
+        setStats(freshStats);
+      }
       showToast('info', 'Adding liquidity...');
       const result = await addLiquidity({
         token0, token1, fee, tickLower, tickUpper,
@@ -126,28 +225,70 @@ export default function PoolPage() {
     }
   };
 
-  const isButtonDisabled = isConnected && (!amount0 || !amount1 || loadingTx || !pool);
+  const initialValid = Number.isFinite(parseFloat(initialPrice)) && parseFloat(initialPrice) > 0;
+
+  const isButtonDisabled =
+    isConnected
+    && (
+      !amount0
+      || !amount1
+      || loadingTx
+      || !rangePricesValid
+      || (poolMode === 'existing' && (!pool || !poolInitialized))
+      || (needBootstrap && !initialValid)
+    );
 
   const getButtonLabel = () => {
     if (!isConnected) return 'Connect Wallet';
-    if (!pool && !loadingPool) return 'Pool does not exist';
     if (!amount0 || !amount1) return 'Enter amounts';
+    if (!rangePricesValid) return 'Set price range';
+    if (poolMode === 'existing' && !pool && !loadingPool) return 'Pool does not exist';
+    if (poolMode === 'existing' && pool && !poolInitialized) return 'Pool not initialized — use New pool';
+    if (needBootstrap && !initialValid) return 'Set starting price';
+    if (needBootstrap) return 'Create pool & add liquidity';
     return 'Add Liquidity';
   };
-
-  const tickSpacing = FEE_TIERS.find(f => f.fee === fee)?.tickSpacing ?? 60;
-  const validTickLower = Math.round(tickLower / tickSpacing) * tickSpacing;
-  const validTickUpper = Math.round(tickUpper / tickSpacing) * tickSpacing;
 
   return (
     <div className="page-narrow">
       <motion.div
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12,
+          marginBottom: 20,
+        }}
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Add Liquidity</h1>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {(['existing', 'new'] as const).map(m => (
+            <motion.button
+              key={m}
+              type="button"
+              onClick={() => setPoolMode(m)}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              style={{
+                padding: '8px 14px',
+                borderRadius: 10,
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: 'pointer',
+                border: '1px solid',
+                background: poolMode === m ? 'rgba(88,166,255,0.15)' : 'var(--bg-secondary)',
+                borderColor: poolMode === m ? 'var(--accent-primary)' : 'var(--border)',
+                color: poolMode === m ? 'var(--accent-primary)' : 'var(--text-secondary)',
+              }}
+            >
+              {m === 'existing' ? 'Existing pool' : 'New pool'}
+            </motion.button>
+          ))}
+        </div>
       </motion.div>
 
       {/* ── 1. Card entrance with spring ── */}
@@ -204,9 +345,41 @@ export default function PoolPage() {
           </div>
         </div>
 
+        {needBootstrap && (
+          <div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 6 }}>
+              Starting price
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, lineHeight: 1.4 }}>
+              Used when the pool is missing or not initialized yet. Same units as the range below:{' '}
+              <strong>
+                1 {token0.symbol} = ? {token1.symbol}
+              </strong>
+              .
+            </div>
+            <input
+              type="number"
+              min={0}
+              step="any"
+              value={initialPrice}
+              onChange={e => setInitialPrice(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '12px 14px',
+                borderRadius: 10,
+                border: '1px solid var(--border)',
+                background: 'var(--bg-secondary)',
+                color: 'var(--text-primary)',
+                fontSize: 16,
+                fontWeight: 600,
+              }}
+            />
+          </div>
+        )}
+
         {/* Pool Stats — animated in when pool loads */}
         <AnimatePresence>
-          {pool && stats && (
+          {pool && stats && poolInitialized && (
             <motion.div
               layout
               className="info-box"
@@ -218,7 +391,14 @@ export default function PoolPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Current Price</span>
                 <span style={{ fontWeight: 600, fontSize: 14 }}>
-                  1 {token0.symbol} = {formatNumber(stats.price, 4)} {token1.symbol}
+                  1 {token0.symbol} ={' '}
+                  {formatNumber(
+                    pool.token0.address.toLowerCase() === token0.address.toLowerCase()
+                      ? pool.price
+                      : 1 / pool.price,
+                    4,
+                  )}{' '}
+                  {token1.symbol}
                 </span>
               </div>
               <div style={{ display: 'flex', gap: 16 }}>
@@ -237,9 +417,8 @@ export default function PoolPage() {
           )}
         </AnimatePresence>
 
-        {/* No pool warning */}
         <AnimatePresence>
-          {!pool && !loadingPool && (
+          {pool && !poolInitialized && (
             <motion.div
               layout
               className="warning-box"
@@ -248,7 +427,39 @@ export default function PoolPage() {
               exit={{ opacity: 0, scale: 0.96, y: 8 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
             >
-              ⚠ No pool found for this pair and fee. You may be the first LP.
+              Pool contract exists but has no starting price yet. Use <strong>New pool</strong>, set starting
+              price, then add liquidity (or initialize first).
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* No pool warning */}
+        <AnimatePresence>
+          {poolMode === 'existing' && !pool && !loadingPool && (
+            <motion.div
+              layout
+              className="warning-box"
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
+              ⚠ No pool found for this pair and fee. Switch to <strong>New pool</strong> to deploy and seed it.
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {poolMode === 'new' && !pool && !loadingPool && (
+            <motion.div
+              layout
+              className="info-box"
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
+              No pool yet for this pair
             </motion.div>
           )}
         </AnimatePresence>
@@ -258,9 +469,14 @@ export default function PoolPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>Price Range</span>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              {pool && (
+              {poolInitialized && (
                 <span className={`badge ${inRange ? 'badge-green' : 'badge-yellow'}`} style={{ fontSize: 11 }}>
                   {inRange ? '● In Range' : '○ Out of Range'}
+                </span>
+              )}
+              {fullRange && (
+                <span className="badge" style={{ fontSize: 11 }}>
+                  Max tick range
                 </span>
               )}
               <motion.button
@@ -285,7 +501,10 @@ export default function PoolPage() {
                 <input
                   type="number"
                   value={value}
-                  onChange={e => onChange(e.target.value)}
+                  onChange={e => {
+                    setFullRange(false);
+                    onChange(e.target.value);
+                  }}
                   style={{
                     background: 'none', border: 'none', outline: 'none',
                     fontSize: 18, fontWeight: 600, color: 'var(--text-primary)',
@@ -302,17 +521,17 @@ export default function PoolPage() {
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <div className="price-display" style={{ flex: 1 }}>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tick Lower</div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{validTickLower}</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{ticksReady ? tickLower : '—'}</div>
             </div>
             <div className="price-display" style={{ flex: 1 }}>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tick Upper</div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{validTickUpper}</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{ticksReady ? tickUpper : '—'}</div>
             </div>
           </div>
 
           {/* ── Out-of-range warning animates in/out without layout jump ── */}
           <AnimatePresence>
-            {!inRange && pool && (
+            {!inRange && poolInitialized && pool && (
               <motion.div
                 layout
                 className="warning-box"
@@ -349,7 +568,7 @@ export default function PoolPage() {
 
         {/* Summary — slides in when both amounts are entered */}
         <AnimatePresence>
-          {amount0 && amount1 && pool && (
+          {amount0 && amount1 && (poolInitialized || poolMode === 'new') && (
             <motion.div
               layout
               initial={{ opacity: 0, height: 0 }}

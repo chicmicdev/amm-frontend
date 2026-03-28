@@ -1,4 +1,3 @@
-import { Toaster } from 'react-hot-toast';
 import StakeCard from '../components/staking/StakeCard';
 import StatsBar from '../components/staking/StatsBar';
 import RewardsChart from '../components/staking/RewardsChart';
@@ -7,19 +6,6 @@ import TransactionTable from '../components/staking/TransactionTable';
 export default function StakingPage() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--stake-bg)', paddingBottom: 60 }}>
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          style: {
-            background: '#1c2128',
-            color: '#e6edf3',
-            border: '1px solid rgba(99,102,241,0.3)',
-            borderRadius: 12,
-            fontSize: 14,
-          },
-        }}
-      />
-
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px' }}>
         {/* Hero */}
         <div className="hero-section">

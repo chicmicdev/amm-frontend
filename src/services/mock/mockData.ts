@@ -1,13 +1,22 @@
-import type { Pool, Position, SwapQuote, PoolStats } from '../../types';
-import { TOKENS } from '../../config/tokens';
+import type { Pool, Position, SwapQuote, PoolStats, Token } from '../../types';
+import { LISTED_TOKEN_META } from '../../config/tokens';
+import { getCachedTokenDecimals } from '../api/tokenMetadata';
 
-const [TKA, TKB, WETH] = TOKENS;
+function tok(symbol: string): Token {
+  const m = LISTED_TOKEN_META.find(x => x.symbol === symbol);
+  if (!m) throw new Error(`mockData: missing token ${symbol}`);
+  return { ...m, decimals: getCachedTokenDecimals(m.address) ?? 18 };
+}
+
+const dUSDC = tok('dUSDC');
+const dWETH = tok('dWETH');
+const WETH = tok('WETH');
 
 export const MOCK_POOLS: Pool[] = [
   {
     address: '0xpool1',
-    token0: TKA,
-    token1: TKB,
+    token0: dUSDC,
+    token1: dWETH,
     fee: 3000,
     sqrtPriceX96: '79228162514264337593543950336',
     tick: 0,
@@ -19,8 +28,8 @@ export const MOCK_POOLS: Pool[] = [
   },
   {
     address: '0xpool2',
-    token0: TKA,
-    token1: TKB,
+    token0: dUSDC,
+    token1: dWETH,
     fee: 500,
     sqrtPriceX96: '79228162514264337593543950336',
     tick: 0,
@@ -32,7 +41,7 @@ export const MOCK_POOLS: Pool[] = [
   },
   {
     address: '0xpool3',
-    token0: TKA,
+    token0: dUSDC,
     token1: WETH,
     fee: 3000,
     sqrtPriceX96: '176364987744069840580948',
@@ -48,8 +57,8 @@ export const MOCK_POOLS: Pool[] = [
 export const MOCK_POSITIONS: Position[] = [
   {
     tokenId: 1,
-    token0: TKA,
-    token1: TKB,
+    token0: dUSDC,
+    token1: dWETH,
     fee: 3000,
     tickLower: -600,
     tickUpper: 600,
@@ -67,8 +76,8 @@ export const MOCK_POSITIONS: Position[] = [
   },
   {
     tokenId: 2,
-    token0: TKA,
-    token1: TKB,
+    token0: dUSDC,
+    token1: dWETH,
     fee: 500,
     tickLower: -100,
     tickUpper: 100,
@@ -86,7 +95,7 @@ export const MOCK_POSITIONS: Position[] = [
   },
   {
     tokenId: 3,
-    token0: TKA,
+    token0: dUSDC,
     token1: WETH,
     fee: 3000,
     tickLower: -8000,
@@ -106,21 +115,21 @@ export const MOCK_POSITIONS: Position[] = [
 ];
 
 export const MOCK_POOL_STATS: Record<string, PoolStats> = {
-  [`${TKA.address}-${TKB.address}-3000`]: {
+  [`${dUSDC.address}-${dWETH.address}-3000`]: {
     price: 1.0,
     priceChange24h: 0.12,
     tvl: 2_450_000,
     volume24h: 342_000,
     fees24h: 1_026,
   },
-  [`${TKA.address}-${TKB.address}-500`]: {
+  [`${dUSDC.address}-${dWETH.address}-500`]: {
     price: 1.0,
     priceChange24h: 0.08,
     tvl: 890_000,
     volume24h: 98_000,
     fees24h: 49,
   },
-  [`${TKA.address}-${WETH.address}-3000`]: {
+  [`${dUSDC.address}-${WETH.address}-3000`]: {
     price: 0.0005,
     priceChange24h: -1.43,
     tvl: 1_200_000,

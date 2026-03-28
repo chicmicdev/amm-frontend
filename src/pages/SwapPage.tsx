@@ -4,7 +4,7 @@ import { useAppKitAccount, useAppKit } from '@reown/appkit/react';
 import TokenInput from '../components/common/TokenInput';
 import SlippageSettings from '../components/swap/SlippageSettings';
 import type { Token, SwapQuote } from '../types';
-import { DEFAULT_TOKEN_IN, DEFAULT_TOKEN_OUT } from '../config/tokens';
+import { useTokens } from '../context/TokensContext';
 import { FEE_TIERS, CONTRACT_ERRORS } from '../config/contracts';
 import { getSwapQuote, getTokenBalance, executeSwap } from '../services/api/poolService';
 import { useToast } from '../context/ToastContext';
@@ -32,20 +32,40 @@ export default function SwapPage() {
   const { isConnected, address } = useAppKitAccount();
   const { open } = useAppKit();
   const { showToast } = useToast();
+  const { tokens } = useTokens();
 
-  const [tokenIn, setTokenIn] = useState<Token>(DEFAULT_TOKEN_IN);
-  const [tokenOut, setTokenOut] = useState<Token>(DEFAULT_TOKEN_OUT);
+  const [tokenIn, setTokenIn] = useState<Token>(() => tokens[0]);
+  const [tokenOut, setTokenOut] = useState<Token>(() => tokens[1]);
+
+  useEffect(() => {
+    setTokenIn(prev => tokens.find(t => t.address === prev.address) ?? tokens[0] ?? prev);
+    setTokenOut(prev => tokens.find(t => t.address === prev.address) ?? tokens[1] ?? prev);
+  }, [tokens]);
   const [amountIn, setAmountIn] = useState('');
   const [amountOut, setAmountOut] = useState('');
-  const [fee] = useState(3000);
-  const [slippage, setSlippage] = useState(0.5);
+  const [fee, setFee] = useState(3000);
+  const [slippage, setSlippage] = useState(2);
   const [quote, setQuote] = useState<SwapQuote | null>(null);
+  const [quoteHint, setQuoteHint] = useState<'no_pool' | 'error' | null>(null);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingSwap, setLoadingSwap] = useState(false);
   const [balanceIn, setBalanceIn] = useState('0');
   const [balanceOut, setBalanceOut] = useState('0');
+  /** Incremented after balances refetch post-swap — drives spring + glow on balance text. */
+  const [balancePulseId, setBalancePulseId] = useState(0);
   // ── 2. track rotation state for the swap arrow ──
   const [arrowFlipped, setArrowFlipped] = useState(false);
+
+  const refreshBalances = useCallback(async () => {
+    if (!address) return;
+    const [inB, outB] = await Promise.all([
+      getTokenBalance(tokenIn.address, address),
+      getTokenBalance(tokenOut.address, address),
+    ]);
+    setBalanceIn(inB);
+    setBalanceOut(outB);
+    setBalancePulseId(n => n + 1);
+  }, [address, tokenIn.address, tokenOut.address]);
 
   useEffect(() => {
     if (isConnected && address) {
@@ -55,14 +75,29 @@ export default function SwapPage() {
   }, [isConnected, address, tokenIn, tokenOut]);
 
   const fetchQuote = useCallback(async (amount: string) => {
-    if (!amount || parseFloat(amount) <= 0) {
-      setQuote(null); setAmountOut(''); return;
+    if (!amount || Number.parseFloat(amount) <= 0) {
+      setQuote(null);
+      setAmountOut('');
+      setQuoteHint(null);
+      return;
     }
     setLoadingQuote(true);
+    setQuoteHint(null);
     try {
       const q = await getSwapQuote({ tokenIn, tokenOut, fee, amountIn: amount, slippage });
-      if (q) { setQuote(q); setAmountOut(q.amountOut); }
-      else { setQuote(null); setAmountOut(''); }
+      if (q) {
+        setQuote(q);
+        setAmountOut(q.amountOut);
+        setQuoteHint(null);
+      } else {
+        setQuote(null);
+        setAmountOut('');
+        setQuoteHint('no_pool');
+      }
+    } catch {
+      setQuote(null);
+      setAmountOut('');
+      setQuoteHint('error');
     } finally {
       setLoadingQuote(false);
     }
@@ -80,6 +115,7 @@ export default function SwapPage() {
     setAmountIn(amountOut);
     setAmountOut(amountIn);
     setQuote(null);
+    setQuoteHint(null);
   };
 
   const handleSwap = async () => {
@@ -97,7 +133,11 @@ export default function SwapPage() {
         });
       }
       showToast('success', `Swapped successfully! Tx: ${shortenTxHash(result.hash)}`);
-      setAmountIn(''); setAmountOut(''); setQuote(null);
+      setAmountIn('');
+      setAmountOut('');
+      setQuote(null);
+      setQuoteHint(null);
+      await refreshBalances();
     } catch (err) {
       showToast('error', resolveError(err));
     } finally {
@@ -137,7 +177,7 @@ export default function SwapPage() {
       {/* ── 1. Card entrance with spring ── */}
       <motion.div
         className="card glow"
-        style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
         layout
         {...cardSpring}
       >
@@ -146,7 +186,13 @@ export default function SwapPage() {
           token={tokenIn}
           amount={amountIn}
           balance={isConnected ? balanceIn : undefined}
-          onTokenChange={t => { setTokenIn(t); setQuote(null); setAmountIn(''); }}
+          balancePulseId={balancePulseId}
+          onTokenChange={t => {
+            setTokenIn(t);
+            setQuote(null);
+            setQuoteHint(null);
+            setAmountIn('');
+          }}
           onAmountChange={setAmountIn}
           excludeToken={tokenOut}
         />
@@ -171,26 +217,56 @@ export default function SwapPage() {
           token={tokenOut}
           amount={amountOut}
           balance={isConnected ? balanceOut : undefined}
-          onTokenChange={t => { setTokenOut(t); setQuote(null); setAmountOut(''); }}
+          balancePulseId={balancePulseId}
+          onTokenChange={t => {
+            setTokenOut(t);
+            setQuote(null);
+            setQuoteHint(null);
+            setAmountOut('');
+          }}
           excludeToken={tokenIn}
           readonly
           loading={loadingQuote}
+          placeholder={loadingQuote ? '…' : quoteHint === 'no_pool' ? 'No pool' : '—'}
         />
 
-        {/* Fee tier chips */}
-        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-          {FEE_TIERS.map(tier => (
-            <motion.button
-              key={tier.fee}
-              type="button"
-              className={`fee-chip${fee === tier.fee ? ' selected' : ''}`}
-              onClick={() => { setFee(tier.fee); setQuote(null); }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              {tier.label}
-            </motion.button>
-          ))}
+        {/* Fee tier — same pattern as Pool page for a clear, comparable UX */}
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 10 }}>
+            Fee Tier
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {FEE_TIERS.map(tier => (
+              <motion.button
+                key={tier.fee}
+                type="button"
+                onClick={() => {
+                  setFee(tier.fee);
+                  setQuote(null);
+                  setQuoteHint(null);
+                }}
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.95 }}
+                style={{
+                  flex: 1,
+                  padding: '10px 8px',
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  border: '1px solid',
+                  textAlign: 'center',
+                  background: fee === tier.fee ? 'rgba(88,166,255,0.15)' : 'var(--bg-secondary)',
+                  borderColor: fee === tier.fee ? 'var(--accent-primary)' : 'var(--border)',
+                  color: fee === tier.fee ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                  transition: 'background 0.2s, color 0.2s, border-color 0.2s',
+                }}
+              >
+                <div>{tier.label}</div>
+                <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2 }}>{tier.description}</div>
+              </motion.button>
+            ))}
+          </div>
         </div>
 
         <div style={{ marginTop: 16 }}>
@@ -216,7 +292,11 @@ export default function SwapPage() {
               <div className="stat-row">
                 <span className="stat-label">Exchange Rate</span>
                 <span className="stat-value">
-                  1 {tokenIn.symbol} = {formatNumber(quote.executionPrice, 4)} {tokenOut.symbol}
+                  1 {tokenIn.symbol} ={' '}
+                  {Number.isFinite(quote.executionPrice)
+                    ? formatNumber(quote.executionPrice, 4)
+                    : '—'}{' '}
+                  {tokenOut.symbol}
                 </span>
               </div>
               <div className="stat-row">
@@ -237,7 +317,7 @@ export default function SwapPage() {
               <div className="stat-row">
                 <span className="stat-label">Min. Received ({slippage}% slippage)</span>
                 <span className="stat-value">
-                  {formatNumber(parseFloat(quote.amountOutMinimum), 4)} {tokenOut.symbol}
+                  {quote.amountOutMinimum} {tokenOut.symbol}
                 </span>
               </div>
               <div className="stat-row">
@@ -276,6 +356,39 @@ export default function SwapPage() {
         </motion.button>
 
         {/* ── Warning box animated in/out with layout ── */}
+        <AnimatePresence>
+          {quoteHint === 'no_pool' && amountIn && !loadingQuote && (
+            <motion.div
+              layout
+              className="warning-box"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+              style={{ marginTop: 8, textAlign: 'center', overflow: 'hidden' }}
+            >
+              No pool for {tokenIn.symbol}/{tokenOut.symbol} at this fee on the current factory. Add liquidity on
+              the Pool page (or pick another fee tier).
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {quoteHint === 'error' && amountIn && !loadingQuote && (
+            <motion.div
+              layout
+              className="warning-box"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+              style={{ marginTop: 8, textAlign: 'center', overflow: 'hidden' }}
+            >
+              Could not estimate this amount (invalid number or RPC issue). Try a smaller value or refresh.
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <AnimatePresence>
           {insufficientBalance && isConnected && (
             <motion.div

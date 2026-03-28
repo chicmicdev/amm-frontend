@@ -1,38 +1,23 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
-import type { ToastMessage } from '../types';
+import { useCallback } from 'react';
+import toast from 'react-hot-toast';
 
-interface ToastContextType {
-  toasts: ToastMessage[];
-  showToast: (type: ToastMessage['type'], message: string) => void;
-  removeToast: (id: string) => void;
-}
+export type ToastKind = 'success' | 'error' | 'info';
 
-const ToastContext = createContext<ToastContextType | null>(null);
-
-export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
-
-  const showToast = useCallback((type: ToastMessage['type'], message: string) => {
-    const id = `${Date.now()}-${Math.random()}`;
-    setToasts(prev => [...prev, { id, type, message }]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 5000);
-  }, []);
-
-  const removeToast = useCallback((id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  }, []);
-
-  return (
-    <ToastContext.Provider value={{ toasts, showToast, removeToast }}>
-      {children}
-    </ToastContext.Provider>
-  );
-}
-
+/**
+ * Thin wrapper over react-hot-toast — no Provider required.
+ */
 export function useToast() {
-  const ctx = useContext(ToastContext);
-  if (!ctx) throw new Error('useToast must be used within ToastProvider');
-  return ctx;
+  const showToast = useCallback((type: ToastKind, message: string) => {
+    if (type === 'success') {
+      toast.success(message, { duration: 5000 });
+      return;
+    }
+    if (type === 'error') {
+      toast.error(message, { duration: 7000 });
+      return;
+    }
+    toast(message, { duration: 4500, icon: 'ℹ️' });
+  }, []);
+
+  return { showToast };
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Token } from '../../types';
-import { TOKENS } from '../../config/tokens';
+import { useTokens } from '../../context/TokensContext';
 import TokenIcon from './TokenIcon';
 
 interface Props {
@@ -24,8 +24,9 @@ const rowVariants = {
 
 export default function TokenSelector({ selected, exclude, onSelect, onClose }: Props) {
   const [search, setSearch] = useState('');
+  const { tokens } = useTokens();
 
-  const filtered = TOKENS.filter(t => {
+  const filtered = tokens.filter(t => {
     if (exclude && t.address === exclude.address) return false;
     if (!search) return true;
     return (
