@@ -5,6 +5,8 @@ interface ImportMetaEnv {
   readonly VITE_POLYGON_AMOY_RPC?: string;
   /** Set to `true` to enable `[FluxSwap:…]` console logs in production builds. */
   readonly VITE_FLUX_SWAP_DEV_LOGS?: string;
+  /** Base URL for the off-chain pools index API (no trailing slash). */
+  readonly VITE_POOLS_API_BASE?: string;
 }
 
 interface ImportMeta {

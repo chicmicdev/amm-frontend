@@ -1,12 +1,15 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import TiltCard from '../components/common/TiltCard';
+import DataTable from '../components/common/DataTable';
+import type { ColumnConfig } from '../components/common/DataTable';
 import { useAppKitAccount } from '@reown/appkit/react';
 import { useAppKit } from '@reown/appkit/react';
 import TokenInput from '../components/common/TokenInput';
 import type { Token, Pool, PoolStats } from '../types';
 import { useTokens } from '../context/TokensContext';
 import { FEE_TIERS, CONTRACT_ERRORS } from '../config/contracts';
+import { listPoolsFromIndex } from '../services/api/poolsListApi';
 import {
   ensurePoolCreatedAndInitialized,
   getPool,
@@ -38,6 +41,18 @@ function resolveError(err: unknown): string {
   return msg;
 }
 
+const POOLS_INDEX_PAGE_SIZE = 10;
+
+function symbolForAddress(addr: string, registry: Token[]): string {
+  const hit = registry.find(t => t.address.toLowerCase() === addr.toLowerCase());
+  return hit?.symbol ?? `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+}
+
+function feeBpsLabel(bps: number): string {
+  const tier = FEE_TIERS.find(f => f.fee === bps);
+  return tier?.label ?? `${bps / 10_000}%`;
+}
+
 export default function PoolPage() {
   const { isConnected, address } = useAppKitAccount();
   const { open } = useAppKit();
@@ -67,6 +82,64 @@ export default function PoolPage() {
   const [poolMode, setPoolMode] = useState<'existing' | 'new'>('existing');
   /** Human: Token B per Token A (same convention as min/max range inputs). Used when creating or initializing a pool. */
   const [initialPrice, setInitialPrice] = useState('1');
+
+  const [indexRows, setIndexRows] = useState<Record<string, unknown>[]>([]);
+  const [indexTotal, setIndexTotal] = useState(0);
+  const [indexLoading, setIndexLoading] = useState(false);
+  const [indexError, setIndexError] = useState<string | null>(null);
+  const [indexPage, setIndexPage] = useState(1);
+  /** API only accepts sortKey=createdAt for /pools */
+  const [indexCreatedDir, setIndexCreatedDir] = useState<'asc' | 'desc'>('desc');
+
+  useEffect(() => {
+    if (poolMode !== 'existing') return;
+    let cancelled = false;
+    (async () => {
+      setIndexLoading(true);
+      setIndexError(null);
+      try {
+        const skip = (indexPage - 1) * POOLS_INDEX_PAGE_SIZE;
+        const sortDirection = indexCreatedDir === 'asc' ? 1 : -1;
+        const { pools, total } = await listPoolsFromIndex({
+          skip,
+          limit: POOLS_INDEX_PAGE_SIZE,
+          sortKey: 'createdAt',
+          sortDirection,
+        });
+        if (cancelled) return;
+        const rows = pools.map(p => {
+          const feeNum = Number.parseInt(p.fee, 10);
+          return {
+            _rowKey: p.poolAddress,
+            pair: `${symbolForAddress(p.token0, tokens)} / ${symbolForAddress(p.token1, tokens)}`,
+            feeLabel: feeBpsLabel(Number.isFinite(feeNum) ? feeNum : 0),
+            poolAddress: p.poolAddress,
+            createdAt: new Date(p.createdAt).toLocaleString(undefined, {
+              dateStyle: 'medium',
+              timeStyle: 'short',
+            }),
+          };
+        });
+        setIndexRows(rows);
+        setIndexTotal(total);
+      } catch (e) {
+        if (!cancelled) {
+          setIndexError((e as Error)?.message ?? 'Failed to load pools');
+          setIndexRows([]);
+          setIndexTotal(0);
+        }
+      } finally {
+        if (!cancelled) setIndexLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [poolMode, indexPage, indexCreatedDir, tokens]);
+
+  useEffect(() => {
+    setIndexPage(1);
+  }, [poolMode]);
 
   useEffect(() => {
     setLoadingPool(true);
@@ -252,6 +325,22 @@ export default function PoolPage() {
     return 'Add Liquidity';
   };
 
+  const poolsIndexColumns = useMemo<ColumnConfig[]>(
+    () => [
+      { key: 'pair', label: 'Pair', type: 'text' },
+      { key: 'feeLabel', label: 'Fee', type: 'text' },
+      { key: 'poolAddress', label: 'Pool contract', type: 'hash' },
+      { key: 'createdAt', label: 'Created', type: 'text', sortable: true },
+    ],
+    [],
+  );
+
+  const onPoolsTableSort = useCallback((key: string, dir: 'asc' | 'desc') => {
+    if (key !== 'createdAt') return;
+    setIndexPage(1);
+    setIndexCreatedDir(dir);
+  }, []);
+
   return (
     <div className="page-narrow">
       <motion.div
@@ -294,332 +383,363 @@ export default function PoolPage() {
         </div>
       </motion.div>
 
-      {/* ── 1. Card entrance with spring ── */}
-      <TiltCard maxTilt={7}>
-      <motion.div
-        className="card glow"
-        layout
-        style={{ display: 'flex', flexDirection: 'column', gap: 20 }}
-        {...cardSpring}
-      >
-        {/* Token Pair */}
-        <div>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 10 }}>
-            Select Pair
-          </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <TokenInput
-              label="Token A" token={token0} amount=""
-              onTokenChange={t => { setToken0(t); setAmount0(''); setAmount1(''); }}
-              excludeToken={token1} readonly
-            />
-            <TokenInput
-              label="Token B" token={token1} amount=""
-              onTokenChange={t => { setToken1(t); setAmount0(''); setAmount1(''); }}
-              excludeToken={token0} readonly
-            />
-          </div>
-        </div>
-
-        {/* Fee Tier */}
-        <div>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 10 }}>
-            Fee Tier
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {FEE_TIERS.map(tier => (
-              <motion.button
-                key={tier.fee}
-                onClick={() => setFee(tier.fee)}
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.95 }}
-                style={{
-                  flex: 1, padding: '10px 8px', borderRadius: 10, fontWeight: 600,
-                  fontSize: 13, cursor: 'pointer', border: '1px solid', textAlign: 'center',
-                  background: fee === tier.fee ? 'rgba(88,166,255,0.15)' : 'var(--bg-secondary)',
-                  borderColor: fee === tier.fee ? 'var(--accent-primary)' : 'var(--border)',
-                  color: fee === tier.fee ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                  transition: 'background 0.2s, color 0.2s, border-color 0.2s',
-                }}
-              >
-                <div>{tier.label}</div>
-                <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2 }}>{tier.description}</div>
-              </motion.button>
-            ))}
-          </div>
-        </div>
-
-        {needBootstrap && (
-          <div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 6 }}>
-              Starting price
+      {poolMode === 'existing' ? (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
+          style={{ marginBottom: 20 }}
+        >
+          {indexError && (
+            <div className="warning-box" style={{ marginBottom: 12 }}>
+              Could not load pool list: {indexError}
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, lineHeight: 1.4 }}>
-              Used when the pool is missing or not initialized yet. Same units as the range below:{' '}
-              <strong>
-                1 {token0.symbol} = ? {token1.symbol}
-              </strong>
-              .
-            </div>
-            <input
-              type="number"
-              min={0}
-              step="any"
-              value={initialPrice}
-              onChange={e => setInitialPrice(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '12px 14px',
-                borderRadius: 10,
-                border: '1px solid var(--border)',
-                background: 'var(--bg-secondary)',
-                color: 'var(--text-primary)',
-                fontSize: 16,
-                fontWeight: 600,
-              }}
-            />
-          </div>
-        )}
-
-        {/* Pool Stats — animated in when pool loads */}
-        <AnimatePresence>
-          {pool && stats && poolInitialized && (
-            <motion.div
-              layout
-              className="info-box"
-              initial={{ opacity: 0, scale: 0.96, y: 8 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Current Price</span>
-                <span style={{ fontWeight: 600, fontSize: 14 }}>
-                  1 {token0.symbol} ={' '}
-                  {formatNumber(
-                    pool.token0.address.toLowerCase() === token0.address.toLowerCase()
-                      ? pool.price
-                      : 1 / pool.price,
-                    4,
-                  )}{' '}
-                  {token1.symbol}
-                </span>
+          )}
+          <DataTable
+            title="Pools on index"
+            subtitle="Registered pools from the indexer API (add liquidity below for a specific pair)."
+            columns={poolsIndexColumns}
+            data={indexRows}
+            loading={indexLoading}
+            pageSize={POOLS_INDEX_PAGE_SIZE}
+            serverPaginated
+            totalRowCount={indexTotal}
+            currentPage={indexPage}
+            initialSort={{ key: 'createdAt', dir: 'desc' }}
+            onSort={onPoolsTableSort}
+            onPageChange={p => setIndexPage(p)}
+            emptyText="No pools returned from the API"
+          />
+        </motion.div>
+      ) : <>
+        {/* ── 1. Card entrance with spring ── */}
+        <TiltCard maxTilt={7}>
+          <motion.div
+            className="card glow"
+            layout
+            style={{ display: 'flex', flexDirection: 'column', gap: 20 }}
+            {...cardSpring}
+          >
+            {/* Token Pair */}
+            <div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 10 }}>
+                Select Pair
               </div>
-              <div style={{ display: 'flex', gap: 16 }}>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <TokenInput
+                  label="Token A" token={token0} amount=""
+                  onTokenChange={t => { setToken0(t); setAmount0(''); setAmount1(''); }}
+                  excludeToken={token1} readonly
+                />
+                <TokenInput
+                  label="Token B" token={token1} amount=""
+                  onTokenChange={t => { setToken1(t); setAmount0(''); setAmount1(''); }}
+                  excludeToken={token0} readonly
+                />
+              </div>
+            </div>
+
+            {/* Fee Tier */}
+            <div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 10 }}>
+                Fee Tier
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {FEE_TIERS.map(tier => (
+                  <motion.button
+                    key={tier.fee}
+                    onClick={() => setFee(tier.fee)}
+                    whileHover={{ scale: 1.04 }}
+                    whileTap={{ scale: 0.95 }}
+                    style={{
+                      flex: 1, padding: '10px 8px', borderRadius: 10, fontWeight: 600,
+                      fontSize: 13, cursor: 'pointer', border: '1px solid', textAlign: 'center',
+                      background: fee === tier.fee ? 'rgba(88,166,255,0.15)' : 'var(--bg-secondary)',
+                      borderColor: fee === tier.fee ? 'var(--accent-primary)' : 'var(--border)',
+                      color: fee === tier.fee ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                      transition: 'background 0.2s, color 0.2s, border-color 0.2s',
+                    }}
+                  >
+                    <div>{tier.label}</div>
+                    <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2 }}>{tier.description}</div>
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+
+            {needBootstrap && (
+              <div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 6 }}>
+                  Starting price
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, lineHeight: 1.4 }}>
+                  Used when the pool is missing or not initialized yet. Same units as the range below:{' '}
+                  <strong>
+                    1 {token0.symbol} = ? {token1.symbol}
+                  </strong>
+                  .
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={initialPrice}
+                  onChange={e => setInitialPrice(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: 10,
+                    border: '1px solid var(--border)',
+                    background: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
+                    fontSize: 16,
+                    fontWeight: 600,
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Pool Stats — animated in when pool loads */}
+            <AnimatePresence>
+              {pool && stats && poolInitialized && (
+                <motion.div
+                  layout
+                  className="info-box"
+                  initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Current Price</span>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>
+                      1 {token0.symbol} ={' '}
+                      {formatNumber(
+                        pool.token0.address.toLowerCase() === token0.address.toLowerCase()
+                          ? pool.price
+                          : 1 / pool.price,
+                        4,
+                      )}{' '}
+                      {token1.symbol}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 16 }}>
+                    {[
+                      { label: 'TVL', value: formatCompactUSD(stats.tvl) },
+                      { label: '24h Volume', value: formatCompactUSD(stats.volume24h) },
+                      { label: '24h Fees', value: formatCompactUSD(stats.fees24h) },
+                    ].map(({ label, value }) => (
+                      <div key={label} style={{ textAlign: 'center', flex: 1 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{label}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {pool && !poolInitialized && (
+                <motion.div
+                  layout
+                  className="warning-box"
+                  initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                >
+                  Pool contract exists but has no starting price yet. Use <strong>New pool</strong>, set starting
+                  price, then add liquidity (or initialize first).
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* No pool warning */}
+            <AnimatePresence>
+              {poolMode === 'existing' && !pool && !loadingPool && (
+                <motion.div
+                  layout
+                  className="warning-box"
+                  initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                >
+                  ⚠ No pool found for this pair and fee. Switch to <strong>New pool</strong> to deploy and seed it.
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {poolMode === 'new' && !pool && !loadingPool && (
+                <motion.div
+                  layout
+                  className="info-box"
+                  initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                >
+                  No pool yet for this pair
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Price Range */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>Price Range</span>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {poolInitialized && (
+                    <span className={`badge ${inRange ? 'badge-green' : 'badge-yellow'}`} style={{ fontSize: 11 }}>
+                      {inRange ? '● In Range' : '○ Out of Range'}
+                    </span>
+                  )}
+                  {fullRange && (
+                    <span className="badge" style={{ fontSize: 11 }}>
+                      Max tick range
+                    </span>
+                  )}
+                  <motion.button
+                    className="btn-ghost"
+                    style={{ fontSize: 12 }}
+                    onClick={handleSetFullRange}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Full Range
+                  </motion.button>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 {[
-                  { label: 'TVL', value: formatCompactUSD(stats.tvl) },
-                  { label: '24h Volume', value: formatCompactUSD(stats.volume24h) },
-                  { label: '24h Fees', value: formatCompactUSD(stats.fees24h) },
-                ].map(({ label, value }) => (
-                  <div key={label} style={{ textAlign: 'center', flex: 1 }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{label}</div>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{value}</div>
+                  { label: 'Min Price', value: priceLower, onChange: setPriceLower },
+                  { label: 'Max Price', value: priceUpper, onChange: setPriceUpper },
+                ].map(({ label, value, onChange }) => (
+                  <div key={label} className="range-input">
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>{label}</div>
+                    <input
+                      type="number"
+                      value={value}
+                      onChange={e => {
+                        setFullRange(false);
+                        onChange(e.target.value);
+                      }}
+                      style={{
+                        background: 'none', border: 'none', outline: 'none',
+                        fontSize: 18, fontWeight: 600, color: 'var(--text-primary)',
+                        width: '100%', textAlign: 'center',
+                      }}
+                    />
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                      {token1.symbol} per {token0.symbol}
+                    </div>
                   </div>
                 ))}
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
-        <AnimatePresence>
-          {pool && !poolInitialized && (
-            <motion.div
-              layout
-              className="warning-box"
-              initial={{ opacity: 0, scale: 0.96, y: 8 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-            >
-              Pool contract exists but has no starting price yet. Use <strong>New pool</strong>, set starting
-              price, then add liquidity (or initialize first).
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* No pool warning */}
-        <AnimatePresence>
-          {poolMode === 'existing' && !pool && !loadingPool && (
-            <motion.div
-              layout
-              className="warning-box"
-              initial={{ opacity: 0, scale: 0.96, y: 8 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-            >
-              ⚠ No pool found for this pair and fee. Switch to <strong>New pool</strong> to deploy and seed it.
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence>
-          {poolMode === 'new' && !pool && !loadingPool && (
-            <motion.div
-              layout
-              className="info-box"
-              initial={{ opacity: 0, scale: 0.96, y: 8 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-            >
-              No pool yet for this pair
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Price Range */}
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>Price Range</span>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              {poolInitialized && (
-                <span className={`badge ${inRange ? 'badge-green' : 'badge-yellow'}`} style={{ fontSize: 11 }}>
-                  {inRange ? '● In Range' : '○ Out of Range'}
-                </span>
-              )}
-              {fullRange && (
-                <span className="badge" style={{ fontSize: 11 }}>
-                  Max tick range
-                </span>
-              )}
-              <motion.button
-                className="btn-ghost"
-                style={{ fontSize: 12 }}
-                onClick={handleSetFullRange}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                Full Range
-              </motion.button>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            {[
-              { label: 'Min Price', value: priceLower, onChange: setPriceLower },
-              { label: 'Max Price', value: priceUpper, onChange: setPriceUpper },
-            ].map(({ label, value, onChange }) => (
-              <div key={label} className="range-input">
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>{label}</div>
-                <input
-                  type="number"
-                  value={value}
-                  onChange={e => {
-                    setFullRange(false);
-                    onChange(e.target.value);
-                  }}
-                  style={{
-                    background: 'none', border: 'none', outline: 'none',
-                    fontSize: 18, fontWeight: 600, color: 'var(--text-primary)',
-                    width: '100%', textAlign: 'center',
-                  }}
-                />
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
-                  {token1.symbol} per {token0.symbol}
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <div className="price-display" style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tick Lower</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{ticksReady ? tickLower : '—'}</div>
+                </div>
+                <div className="price-display" style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tick Upper</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{ticksReady ? tickUpper : '—'}</div>
                 </div>
               </div>
-            ))}
-          </div>
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <div className="price-display" style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tick Lower</div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{ticksReady ? tickLower : '—'}</div>
+              {/* ── Out-of-range warning animates in/out without layout jump ── */}
+              <AnimatePresence>
+                {!inRange && poolInitialized && pool && (
+                  <motion.div
+                    layout
+                    className="warning-box"
+                    initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                    animate={{ opacity: 1, height: 'auto', marginTop: 10 }}
+                    exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                    transition={{ duration: 0.22 }}
+                    style={{ overflow: 'hidden' }}
+                  >
+                    ⚠ Your position will not earn fees at the current price of {formatNumber(currentPrice, 4)}.
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-            <div className="price-display" style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tick Upper</div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{ticksReady ? tickUpper : '—'}</div>
+
+            {/* Deposit Amounts */}
+            <div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 10 }}>
+                Deposit Amounts
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <TokenInput
+                  label={token0.symbol} token={token0} amount={amount0}
+                  balance={isConnected ? balance0 : undefined}
+                  onTokenChange={() => { }} onAmountChange={handleAmount0Change}
+                />
+                <TokenInput
+                  label={token1.symbol} token={token1} amount={amount1}
+                  balance={isConnected ? balance1 : undefined}
+                  onTokenChange={() => { }} onAmountChange={handleAmount1Change}
+                />
+              </div>
             </div>
-          </div>
 
-          {/* ── Out-of-range warning animates in/out without layout jump ── */}
-          <AnimatePresence>
-            {!inRange && poolInitialized && pool && (
-              <motion.div
-                layout
-                className="warning-box"
-                initial={{ opacity: 0, height: 0, marginTop: 0 }}
-                animate={{ opacity: 1, height: 'auto', marginTop: 10 }}
-                exit={{ opacity: 0, height: 0, marginTop: 0 }}
-                transition={{ duration: 0.22 }}
-                style={{ overflow: 'hidden' }}
-              >
-                ⚠ Your position will not earn fees at the current price of {formatNumber(currentPrice, 4)}.
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+            {/* Summary — slides in when both amounts are entered */}
+            <AnimatePresence>
+              {amount0 && amount1 && (poolInitialized || poolMode === 'new') && (
+                <motion.div
+                  layout
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.22 }}
+                  style={{ overflow: 'hidden' }}
+                >
+                  <div className="divider" />
+                  {[
+                    { label: `Pooled ${token0.symbol}`, value: formatNumber(parseFloat(amount0), 4) },
+                    { label: `Pooled ${token1.symbol}`, value: formatNumber(parseFloat(amount1), 4) },
+                    { label: 'Price Range', value: `${priceLower} – ${priceUpper}` },
+                    { label: 'Fee Tier', value: FEE_TIERS.find(f => f.fee === fee)?.label },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="stat-row">
+                      <span className="stat-label">{label}</span>
+                      <span className="stat-value">{value}</span>
+                    </div>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-        {/* Deposit Amounts */}
-        <div>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 10 }}>
-            Deposit Amounts
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <TokenInput
-              label={token0.symbol} token={token0} amount={amount0}
-              balance={isConnected ? balance0 : undefined}
-              onTokenChange={() => {}} onAmountChange={handleAmount0Change}
-            />
-            <TokenInput
-              label={token1.symbol} token={token1} amount={amount1}
-              balance={isConnected ? balance1 : undefined}
-              onTokenChange={() => {}} onAmountChange={handleAmount1Change}
-            />
-          </div>
-        </div>
-
-        {/* Summary — slides in when both amounts are entered */}
-        <AnimatePresence>
-          {amount0 && amount1 && (poolInitialized || poolMode === 'new') && (
-            <motion.div
+            {/* ── 4. Primary action button with hover / tap / loading pulse ── */}
+            <motion.button
               layout
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.22 }}
-              style={{ overflow: 'hidden' }}
+              className="btn-primary"
+              onClick={handleAddLiquidity}
+              disabled={!!isButtonDisabled}
+              whileHover={!isButtonDisabled ? { scale: 1.015, y: -1 } : {}}
+              whileTap={!isButtonDisabled ? { scale: 0.985 } : {}}
+              animate={
+                loadingTx
+                  ? { opacity: [0.4, 1, 0.4] }
+                  : { opacity: 1 }
+              }
+              transition={
+                loadingTx
+                  ? { opacity: { repeat: Infinity, duration: 1.1, ease: 'easeInOut' } }
+                  : { type: 'spring', stiffness: 400, damping: 20 }
+              }
             >
-              <div className="divider" />
-              {[
-                { label: `Pooled ${token0.symbol}`, value: formatNumber(parseFloat(amount0), 4) },
-                { label: `Pooled ${token1.symbol}`, value: formatNumber(parseFloat(amount1), 4) },
-                { label: 'Price Range', value: `${priceLower} – ${priceUpper}` },
-                { label: 'Fee Tier', value: FEE_TIERS.find(f => f.fee === fee)?.label },
-              ].map(({ label, value }) => (
-                <div key={label} className="stat-row">
-                  <span className="stat-label">{label}</span>
-                  <span className="stat-value">{value}</span>
-                </div>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
+              {loadingTx ? <span className="spinner" /> : getButtonLabel()}
+            </motion.button>
+          </motion.div>
+        </TiltCard></>}
 
-        {/* ── 4. Primary action button with hover / tap / loading pulse ── */}
-        <motion.button
-          layout
-          className="btn-primary"
-          onClick={handleAddLiquidity}
-          disabled={!!isButtonDisabled}
-          whileHover={!isButtonDisabled ? { scale: 1.015, y: -1 } : {}}
-          whileTap={!isButtonDisabled ? { scale: 0.985 } : {}}
-          animate={
-            loadingTx
-              ? { opacity: [0.4, 1, 0.4] }
-              : { opacity: 1 }
-          }
-          transition={
-            loadingTx
-              ? { opacity: { repeat: Infinity, duration: 1.1, ease: 'easeInOut' } }
-              : { type: 'spring', stiffness: 400, damping: 20 }
-          }
-        >
-          {loadingTx ? <span className="spinner" /> : getButtonLabel()}
-        </motion.button>
-      </motion.div>
-      </TiltCard>
+
     </div>
   );
 }

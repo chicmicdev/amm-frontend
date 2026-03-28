@@ -41,6 +41,18 @@ interface DataTableProps extends TableEvents {
   activeFilter?: string;
   emptyText?: string;
   emptyIcon?: string;
+  /**
+   * When true, `data` is one page from the server (no client slice).
+   * Set `totalRowCount` to the API total for pagination. Client-side sorting is skipped; use `onSort` to refetch.
+   */
+  serverPaginated?: boolean;
+  totalRowCount?: number;
+  /** Initial column sort UI (e.g. match first server query). */
+  initialSort?: { key: string; dir: 'asc' | 'desc' };
+  /**
+   * With `serverPaginated`, pass the current 1-based page from the parent so resets (e.g. sort) stay in sync.
+   */
+  currentPage?: number;
 }
 
 // ── Badge helpers ─────────────────────────────────────────────────────────────
@@ -133,6 +145,10 @@ export default function DataTable({
   activeFilter,
   emptyText = 'No data found',
   emptyIcon = '📭',
+  serverPaginated = false,
+  totalRowCount,
+  initialSort,
+  currentPage: controlledPage,
   onSearch,
   onPageChange,
   onSort,
@@ -140,12 +156,17 @@ export default function DataTable({
   onClear,
 }: DataTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [page, setPage] = useState(1);
-  const [sortKey, setSortKey] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [internalPage, setInternalPage] = useState(1);
+  const page =
+    serverPaginated && typeof controlledPage === 'number' ? controlledPage : internalPage;
+  const [sortKey, setSortKey] = useState<string | null>(() => initialSort?.key ?? null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => initialSort?.dir ?? 'asc');
 
   // Reset page when filter or search changes
-  useEffect(() => { setPage(1); }, [activeFilter, searchQuery]);
+  useEffect(() => {
+    if (serverPaginated && typeof controlledPage === 'number') return;
+    setInternalPage(1);
+  }, [activeFilter, searchQuery, serverPaginated, controlledPage]);
 
   // Client-side search
   const searched = useMemo(() => {
@@ -156,8 +177,9 @@ export default function DataTable({
     );
   }, [data, searchQuery, columns]);
 
-  // Client-side sort
+  // Client-side sort (skipped when the server owns ordering)
   const sorted = useMemo(() => {
+    if (serverPaginated) return searched;
     if (!sortKey) return searched;
     return [...searched].sort((a, b) => {
       const av = a[sortKey], bv = b[sortKey];
@@ -168,10 +190,13 @@ export default function DataTable({
         : aStr.localeCompare(bStr);
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [searched, sortKey, sortDir]);
+  }, [searched, sortKey, sortDir, serverPaginated]);
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const paginated = sorted.slice((page - 1) * pageSize, page * pageSize);
+  const effectiveTotal =
+    serverPaginated && typeof totalRowCount === 'number' ? totalRowCount : sorted.length;
+
+  const totalPages = Math.max(1, Math.ceil(effectiveTotal / pageSize));
+  const paginated = serverPaginated ? sorted : sorted.slice((page - 1) * pageSize, page * pageSize);
 
   const handleSort = (key: string) => {
     const newDir = sortKey === key && sortDir === 'asc' ? 'desc' : 'asc';
@@ -186,20 +211,24 @@ export default function DataTable({
   };
 
   const handlePage = (p: number) => {
-    setPage(p);
+    if (!(serverPaginated && typeof controlledPage === 'number')) {
+      setInternalPage(p);
+    }
     onPageChange?.(p, totalPages);
   };
 
   const handleClear = () => {
     setSearchQuery('');
-    setPage(1);
+    if (!(serverPaginated && typeof controlledPage === 'number')) {
+      setInternalPage(1);
+    }
     setSortKey(null);
     setSortDir('asc');
     onClear?.();
   };
 
-  const showFrom = sorted.length === 0 ? 0 : (page - 1) * pageSize + 1;
-  const showTo = Math.min(page * pageSize, sorted.length);
+  const showFrom = effectiveTotal === 0 ? 0 : (page - 1) * pageSize + 1;
+  const showTo = Math.min(page * pageSize, effectiveTotal);
 
   return (
     <div className="stake-card" style={{ padding: '24px 0', overflow: 'hidden' }}>
@@ -330,7 +359,11 @@ export default function DataTable({
             ) : (
               paginated.map((row, i) => (
                 <tr
-                  key={i}
+                  key={
+                    String(
+                      (row._rowKey ?? row.poolAddress ?? row.id ?? i) as string | number,
+                    )
+                  }
                   style={{
                     display: 'grid',
                     gridTemplateColumns: `repeat(${columns.length}, 1fr)`,
@@ -357,7 +390,7 @@ export default function DataTable({
       </div>
 
       {/* ── Pagination ── */}
-      {sorted.length > pageSize && (
+      {effectiveTotal > pageSize && (
         <div style={{
           padding: '16px 24px 0',
           borderTop: '1px solid rgba(31,41,55,0.4)',
@@ -366,7 +399,7 @@ export default function DataTable({
           flexWrap: 'wrap', gap: 8,
           fontSize: 13, color: 'var(--text-secondary)',
         }}>
-          <span>Showing {showFrom}–{showTo} of {sorted.length}</span>
+          <span>Showing {showFrom}–{showTo} of {effectiveTotal}</span>
 
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <button

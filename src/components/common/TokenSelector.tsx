@@ -27,7 +27,7 @@ export default function TokenSelector({ selected, exclude, onSelect, onClose }: 
   const { tokens } = useTokens();
 
   const filtered = tokens.filter(t => {
-    if (exclude && t.address === exclude.address) return false;
+    if (exclude && t.address.toLowerCase() === exclude.address.toLowerCase()) return false;
     if (!search) return true;
     return (
       t.symbol.toLowerCase().includes(search.toLowerCase()) ||

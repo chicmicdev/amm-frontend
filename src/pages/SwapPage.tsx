@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import TiltCard from '../components/common/TiltCard';
 import { useAppKitAccount, useAppKit } from '@reown/appkit/react';
@@ -31,6 +31,11 @@ function resolveError(err: unknown): string {
   return msg;
 }
 
+function firstTokenOtherThan(list: Token[], addr: string): Token | undefined {
+  const a = addr.toLowerCase();
+  return list.find(t => t.address.toLowerCase() !== a);
+}
+
 export default function SwapPage() {
   const { isConnected, address } = useAppKitAccount();
   const { open } = useAppKit();
@@ -38,12 +43,34 @@ export default function SwapPage() {
   const { tokens } = useTokens();
 
   const [tokenIn, setTokenIn] = useState<Token>(() => tokens[0]);
-  const [tokenOut, setTokenOut] = useState<Token>(() => tokens[1]);
+  const [tokenOut, setTokenOut] = useState<Token>(() => tokens[1] ?? tokens[0]);
 
+  /** Invalidate in-flight quote when inputs change so stale RPC results never overwrite UI. */
+  const quoteSeqRef = useRef(0);
+
+  // Keep selected tokens on registry updates; never collapse to a single-token pair when list has ≥2.
   useEffect(() => {
-    setTokenIn(prev => tokens.find(t => t.address === prev.address) ?? tokens[0] ?? prev);
-    setTokenOut(prev => tokens.find(t => t.address === prev.address) ?? tokens[1] ?? prev);
+    if (tokens.length === 0) return;
+    if (tokens.length === 1) {
+      setTokenIn(tokens[0]);
+      setTokenOut(tokens[0]);
+      return;
+    }
+    setTokenIn(prev => tokens.find(t => t.address.toLowerCase() === prev.address.toLowerCase()) ?? tokens[0]);
+    setTokenOut(prev => tokens.find(t => t.address.toLowerCase() === prev.address.toLowerCase()) ?? tokens[1]);
   }, [tokens]);
+
+  useLayoutEffect(() => {
+    if (tokens.length < 2) return;
+    if (tokenIn.address.toLowerCase() !== tokenOut.address.toLowerCase()) return;
+    const alt = firstTokenOtherThan(tokens, tokenIn.address);
+    if (alt) setTokenOut(alt);
+  }, [tokens, tokenIn.address, tokenOut.address]);
+
+  const sameToken = useMemo(
+    () => tokenIn.address.toLowerCase() === tokenOut.address.toLowerCase(),
+    [tokenIn.address, tokenOut.address],
+  );
   const [amountIn, setAmountIn] = useState('');
   const [amountOut, setAmountOut] = useState('');
   const [fee, setFee] = useState(3000);
@@ -71,58 +98,131 @@ export default function SwapPage() {
   }, [address, tokenIn.address, tokenOut.address]);
 
   useEffect(() => {
-    if (isConnected && address) {
-      getTokenBalance(tokenIn.address, address).then(setBalanceIn);
-      getTokenBalance(tokenOut.address, address).then(setBalanceOut);
-    }
-  }, [isConnected, address, tokenIn, tokenOut]);
+    if (!isConnected || !address) return;
+    let cancelled = false;
+    (async () => {
+      const [inB, outB] = await Promise.all([
+        getTokenBalance(tokenIn.address, address),
+        getTokenBalance(tokenOut.address, address),
+      ]);
+      if (!cancelled) {
+        setBalanceIn(inB);
+        setBalanceOut(outB);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isConnected, address, tokenIn.address, tokenOut.address]);
 
-  const fetchQuote = useCallback(async (amount: string) => {
-    if (!amount || Number.parseFloat(amount) <= 0) {
-      setQuote(null);
-      setAmountOut('');
-      setQuoteHint(null);
-      return;
-    }
-    setLoadingQuote(true);
+  const resetQuoteState = useCallback(() => {
+    quoteSeqRef.current += 1;
+    setQuote(null);
     setQuoteHint(null);
-    try {
-      const q = await getSwapQuote({ tokenIn, tokenOut, fee, amountIn: amount, slippage });
-      if (q) {
-        setQuote(q);
-        setAmountOut(q.amountOut);
-        setQuoteHint(null);
-      } else {
+    setLoadingQuote(false);
+  }, []);
+
+  const fetchQuote = useCallback(
+    async (amount: string, inTok: Token, outTok: Token) => {
+      if (!amount || Number.parseFloat(amount) <= 0) {
         setQuote(null);
         setAmountOut('');
-        setQuoteHint('no_pool');
+        setQuoteHint(null);
+        setLoadingQuote(false);
+        return;
       }
-    } catch {
-      setQuote(null);
-      setAmountOut('');
-      setQuoteHint('error');
-    } finally {
-      setLoadingQuote(false);
-    }
-  }, [tokenIn, tokenOut, fee, slippage]);
+      if (inTok.address.toLowerCase() === outTok.address.toLowerCase()) {
+        setQuote(null);
+        setAmountOut('');
+        setQuoteHint('error');
+        setLoadingQuote(false);
+        return;
+      }
+      const seq = ++quoteSeqRef.current;
+      setLoadingQuote(true);
+      setQuoteHint(null);
+      try {
+        const q = await getSwapQuote({
+          tokenIn: inTok,
+          tokenOut: outTok,
+          fee,
+          amountIn: amount,
+          slippage,
+        });
+        if (seq !== quoteSeqRef.current) return;
+        if (q) {
+          setQuote(q);
+          setAmountOut(q.amountOut);
+          setQuoteHint(null);
+        } else {
+          setQuote(null);
+          setAmountOut('');
+          setQuoteHint('no_pool');
+        }
+      } catch {
+        if (seq !== quoteSeqRef.current) return;
+        setQuote(null);
+        setAmountOut('');
+        setQuoteHint('error');
+      } finally {
+        if (seq === quoteSeqRef.current) setLoadingQuote(false);
+      }
+    },
+    [fee, slippage],
+  );
 
   useEffect(() => {
-    const timer = setTimeout(() => fetchQuote(amountIn), 400);
+    const timer = setTimeout(() => {
+      fetchQuote(amountIn, tokenIn, tokenOut);
+    }, 400);
     return () => clearTimeout(timer);
-  }, [amountIn, fetchQuote]);
+  }, [amountIn, tokenIn, tokenOut, fetchQuote]);
+
+  const handleTokenInChange = useCallback(
+    (t: Token) => {
+      resetQuoteState();
+      setAmountIn('');
+      setAmountOut('');
+      setTokenIn(t);
+      if (t.address.toLowerCase() === tokenOut.address.toLowerCase()) {
+        const alt = firstTokenOtherThan(tokens, t.address);
+        if (alt) setTokenOut(alt);
+      }
+    },
+    [tokenOut.address, tokens, resetQuoteState],
+  );
+
+  const handleTokenOutChange = useCallback(
+    (t: Token) => {
+      resetQuoteState();
+      setAmountOut('');
+      setTokenOut(t);
+      if (t.address.toLowerCase() === tokenIn.address.toLowerCase()) {
+        const alt = firstTokenOtherThan(tokens, t.address);
+        if (alt) setTokenIn(alt);
+      }
+    },
+    [tokenIn.address, tokens, resetQuoteState],
+  );
 
   const handleSwapTokens = () => {
     setArrowFlipped(f => !f);
-    setTokenIn(tokenOut);
-    setTokenOut(tokenIn);
-    setAmountIn(amountOut);
-    setAmountOut(amountIn);
-    setQuote(null);
-    setQuoteHint(null);
+    resetQuoteState();
+    const nextIn = tokenOut;
+    const nextOut = tokenIn;
+    const nextAmtIn = amountOut.trim() !== '' ? amountOut : '';
+    setTokenIn(nextIn);
+    setTokenOut(nextOut);
+    setAmountIn(nextAmtIn);
+    setAmountOut('');
   };
 
   const handleSwap = async () => {
     if (!isConnected) { open(); return; }
+    if (sameToken) {
+      showToast('error', 'Choose two different tokens to swap.');
+      return;
+    }
     if (!amountIn || !quote) return;
     setLoadingSwap(true);
     try {
@@ -148,15 +248,25 @@ export default function SwapPage() {
     }
   };
 
-  const insufficientBalance = parseFloat(amountIn || '0') > parseFloat(balanceIn || '0');
+  const insufficientBalance = Number.parseFloat(amountIn || '0') > Number.parseFloat(balanceIn || '0');
 
-  const btnDisabled = isConnected && (
-    !amountIn || parseFloat(amountIn) === 0 || insufficientBalance || loadingSwap || loadingQuote
-  );
+  const btnDisabled =
+    isConnected
+    && (
+      sameToken
+      || tokens.length < 2
+      || !amountIn
+      || Number.parseFloat(amountIn) === 0
+      || insufficientBalance
+      || loadingSwap
+      || loadingQuote
+    );
 
   const btnLabel = () => {
     if (!isConnected) return 'Connect Wallet';
-    if (!amountIn || parseFloat(amountIn) === 0) return 'Enter an amount';
+    if (tokens.length < 2) return 'Loading tokens…';
+    if (sameToken) return 'Select two different tokens';
+    if (!amountIn || Number.parseFloat(amountIn) === 0) return 'Enter an amount';
     if (insufficientBalance) return `Insufficient ${tokenIn.symbol} balance`;
     return `Swap ${tokenIn.symbol} → ${tokenOut.symbol}`;
   };
@@ -191,12 +301,7 @@ export default function SwapPage() {
           amount={amountIn}
           balance={isConnected ? balanceIn : undefined}
           balancePulseId={balancePulseId}
-          onTokenChange={t => {
-            setTokenIn(t);
-            setQuote(null);
-            setQuoteHint(null);
-            setAmountIn('');
-          }}
+          onTokenChange={handleTokenInChange}
           onAmountChange={setAmountIn}
           excludeToken={tokenOut}
         />
@@ -222,16 +327,19 @@ export default function SwapPage() {
           amount={amountOut}
           balance={isConnected ? balanceOut : undefined}
           balancePulseId={balancePulseId}
-          onTokenChange={t => {
-            setTokenOut(t);
-            setQuote(null);
-            setQuoteHint(null);
-            setAmountOut('');
-          }}
+          onTokenChange={handleTokenOutChange}
           excludeToken={tokenIn}
           readonly
           loading={loadingQuote}
-          placeholder={loadingQuote ? '…' : quoteHint === 'no_pool' ? 'No pool' : '—'}
+          placeholder={
+            sameToken
+              ? '—'
+              : loadingQuote
+                ? '…'
+                : quoteHint === 'no_pool'
+                  ? 'No pool'
+                  : '—'
+          }
         />
 
         {/* Fee tier — same pattern as Pool page for a clear, comparable UX */}
@@ -246,8 +354,7 @@ export default function SwapPage() {
                 type="button"
                 onClick={() => {
                   setFee(tier.fee);
-                  setQuote(null);
-                  setQuoteHint(null);
+                  resetQuoteState();
                 }}
                 whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.95 }}
@@ -276,7 +383,10 @@ export default function SwapPage() {
         <div style={{ marginTop: 16 }}>
           <SlippageSettings
             slippage={slippage}
-            onChange={setSlippage}
+            onChange={v => {
+              resetQuoteState();
+              setSlippage(v);
+            }}
             onClose={() => {}}
           />
         </div>
@@ -359,9 +469,25 @@ export default function SwapPage() {
           {loadingSwap ? <span className="spinner" /> : btnLabel()}
         </motion.button>
 
+        <AnimatePresence>
+          {sameToken && isConnected && tokens.length >= 2 && (
+            <motion.div
+              layout
+              className="warning-box"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+              style={{ marginTop: 8, textAlign: 'center', overflow: 'hidden' }}
+            >
+              Input and output token must be different. Change one side in the token picker.
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* ── Warning box animated in/out with layout ── */}
         <AnimatePresence>
-          {quoteHint === 'no_pool' && amountIn && !loadingQuote && (
+          {quoteHint === 'no_pool' && amountIn && !loadingQuote && !sameToken && (
             <motion.div
               layout
               className="warning-box"
@@ -378,7 +504,7 @@ export default function SwapPage() {
         </AnimatePresence>
 
         <AnimatePresence>
-          {quoteHint === 'error' && amountIn && !loadingQuote && (
+          {quoteHint === 'error' && amountIn && !loadingQuote && !sameToken && (
             <motion.div
               layout
               className="warning-box"

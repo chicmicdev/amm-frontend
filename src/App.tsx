@@ -5,11 +5,9 @@ import PoolPage from './pages/PoolPage';
 import PositionsPage from './pages/PositionsPage';
 import StakingPage from './pages/StakingPage';
 import LandingPage from './pages/LandingPage';
-import { ToastProvider } from './context/ToastContext';
 
 export default function App() {
   return (
-    <ToastProvider>
       <BrowserRouter>
         <Routes>
           {/* Standalone landing page — no Layout/Header */}
@@ -27,6 +25,5 @@ export default function App() {
           <Route path="*" element={<LandingPage />} />
         </Routes>
       </BrowserRouter>
-    </ToastProvider>
   );
 }
