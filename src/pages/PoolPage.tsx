@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import DataTable from '../components/common/DataTable';
 import type { ColumnConfig } from '../components/common/DataTable';
 import { useAppKitAccount } from '@reown/appkit/react';
 import { useAppKit } from '@reown/appkit/react';
 import TokenInput from '../components/common/TokenInput';
+import ScrollReveal from '../components/common/ScrollReveal';
 import type { Token, Pool, PoolStats } from '../types';
 import { useTokens } from '../context/TokensContext';
 import { FEE_TIERS, CONTRACT_ERRORS } from '../config/contracts';
@@ -90,6 +92,98 @@ interface SelectedIndexPool {
   fee: number;
   pair: string;
   feeLabel: string;
+}
+
+// ─── Shared section header ─────────────────────────────────────────────────
+function SectionHeader({
+  title,
+  subtitle,
+  right,
+}: {
+  title: string;
+  subtitle?: string;
+  right?: ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-end',
+        marginBottom: 20,
+        gap: 12,
+        flexWrap: 'wrap',
+      }}
+    >
+      <div>
+        <h3 className="section-heading" style={{ marginBottom: subtitle ? 4 : 0 }}>
+          {title}
+        </h3>
+        {subtitle && (
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>{subtitle}</p>
+        )}
+      </div>
+      {right && <div style={{ flexShrink: 0 }}>{right}</div>}
+    </div>
+  );
+}
+
+// ─── Compact stat card ─────────────────────────────────────────────────────
+function StatCard({
+  label,
+  value,
+  unit,
+  delay = 0,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  delay?: number;
+}) {
+  return (
+    <ScrollReveal delay={delay} variant="scaleUp">
+      <div
+        style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)',
+          padding: '16px 18px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          transition: 'border-color 0.25s, box-shadow 0.25s',
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.07em',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          {label}
+        </span>
+        <span
+          style={{
+            fontSize: 20,
+            fontWeight: 800,
+            letterSpacing: '-0.02em',
+            lineHeight: 1.1,
+            color: 'var(--text-primary)',
+          }}
+        >
+          {value}
+        </span>
+        {unit && (
+          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{unit}</span>
+        )}
+      </div>
+    </ScrollReveal>
+  );
 }
 
 export default function PoolPage() {
@@ -539,17 +633,75 @@ export default function PoolPage() {
     [selectedIndexPool, handleSelectPool],
   );
 
-  // ─── Liquidity form JSX (shared between existing & new modes) ────────────────
+  // ─── Pool stats cards (rendered outside the form) ────────────────────────
+  const currentSpotPrice = pool && poolInitialized
+    ? (pool.token0.address.toLowerCase() === token0.address.toLowerCase()
+      ? pool.price
+      : 1 / pool.price)
+    : null;
+
+  const poolStatsSection = (
+    <AnimatePresence>
+      {loadingPool && !pool && (
+        <motion.div
+          key="skeleton"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}
+        >
+          {[0, 1, 2].map(i => (
+            <div key={i} className="skeleton" style={{ height: 88, borderRadius: 16 }} />
+          ))}
+        </motion.div>
+      )}
+      {pool && stats && poolInitialized && currentSpotPrice !== null && (
+        <motion.div
+          key="stats"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 8 }}
+          transition={{ duration: 0.25 }}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}
+        >
+          <StatCard
+            label="Current Price"
+            value={formatNumber(currentSpotPrice, 4)}
+            unit={`${token1.symbol} per ${token0.symbol}`}
+            delay={0}
+          />
+          <StatCard label="TVL" value={formatCompactUSD(stats.tvl)} delay={0.08} />
+          <StatCard
+            label="24h Fees"
+            value={formatCompactUSD(stats.fees24h)}
+            unit={`Vol: ${formatCompactUSD(stats.volume24h)}`}
+            delay={0.16}
+          />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
+  // ─── Liquidity form JSX (shared between existing & new modes) ────────────
   const liquidityForm = (
     <motion.div
-      className="card glow"
+      className="stake-card glow"
       layout
       style={{ display: 'flex', flexDirection: 'column', gap: 20 }}
       {...cardSpring}
     >
       {/* Token Pair */}
       <div>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 10 }}>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.07em',
+            color: 'var(--text-secondary)',
+            marginBottom: 10,
+          }}
+        >
           Select Pair
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
@@ -568,7 +720,16 @@ export default function PoolPage() {
 
       {/* Fee Tier */}
       <div>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 10 }}>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.07em',
+            color: 'var(--text-secondary)',
+            marginBottom: 10,
+          }}
+        >
           Fee Tier
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -578,26 +739,39 @@ export default function PoolPage() {
               onClick={() => setFee(tier.fee)}
               whileHover={{ scale: 1.04 }}
               whileTap={{ scale: 0.95 }}
+              className={`fee-chip${fee === tier.fee ? ' selected' : ''}`}
               style={{
-                flex: 1, padding: '10px 8px', borderRadius: 10, fontWeight: 600,
-                fontSize: 13, cursor: 'pointer', border: '1px solid', textAlign: 'center',
-                background: fee === tier.fee ? 'rgba(88,166,255,0.15)' : 'var(--bg-secondary)',
-                borderColor: fee === tier.fee ? 'var(--accent-primary)' : 'var(--border)',
-                color: fee === tier.fee ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                transition: 'background 0.2s, color 0.2s, border-color 0.2s',
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                borderRadius: 10,
+                padding: '10px 8px',
               }}
             >
-              <div>{tier.label}</div>
-              <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2 }}>{tier.description}</div>
+              <span style={{ fontWeight: 700, fontSize: 13 }}>{tier.label}</span>
+              <span style={{ fontSize: 11, fontWeight: 400, marginTop: 2, opacity: 0.75 }}>
+                {tier.description}
+              </span>
             </motion.button>
           ))}
         </div>
       </div>
 
+      {/* Starting price — only when bootstrapping a new pool */}
       {needBootstrap && (
         <div>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 6 }}>
-            Starting price
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.07em',
+              color: 'var(--text-secondary)',
+              marginBottom: 6,
+            }}
+          >
+            Starting Price
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, lineHeight: 1.4 }}>
             Used when the pool is missing or not initialized yet. Same units as the range below:{' '}
@@ -612,60 +786,13 @@ export default function PoolPage() {
             step="any"
             value={initialPrice}
             onChange={e => setInitialPrice(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '12px 14px',
-              borderRadius: 10,
-              border: '1px solid var(--border)',
-              background: 'var(--bg-secondary)',
-              color: 'var(--text-primary)',
-              fontSize: 16,
-              fontWeight: 600,
-            }}
+            className="stake-input"
+            style={{ fontSize: 16 }}
           />
         </div>
       )}
 
-      {/* Pool Stats — animated in when pool loads */}
-      <AnimatePresence>
-        {pool && stats && poolInitialized && (
-          <motion.div
-            layout
-            className="info-box"
-            initial={{ opacity: 0, scale: 0.96, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 8 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Current Price</span>
-              <span style={{ fontWeight: 600, fontSize: 14 }}>
-                1 {token0.symbol} ={' '}
-                {formatNumber(
-                  pool.token0.address.toLowerCase() === token0.address.toLowerCase()
-                    ? pool.price
-                    : 1 / pool.price,
-                  4,
-                )}{' '}
-                {token1.symbol}
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: 16 }}>
-              {[
-                { label: 'TVL', value: formatCompactUSD(stats.tvl) },
-                { label: '24h Volume', value: formatCompactUSD(stats.volume24h) },
-                { label: '24h Fees', value: formatCompactUSD(stats.fees24h) },
-              ].map(({ label, value }) => (
-                <div key={label} style={{ textAlign: 'center', flex: 1 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{label}</div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{value}</div>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
+      {/* Pool not initialized warning */}
       <AnimatePresence>
         {pool && !poolInitialized && (
           <motion.div
@@ -715,8 +842,25 @@ export default function PoolPage() {
 
       {/* Price Range */}
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>Price Range</span>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 10,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.07em',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            Price Range
+          </span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             {poolInitialized && (
               <span className={`badge ${inRange ? 'badge-green' : 'badge-yellow'}`} style={{ fontSize: 11 }}>
@@ -798,7 +942,16 @@ export default function PoolPage() {
 
       {/* Deposit Amounts */}
       <div>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 10 }}>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.07em',
+            color: 'var(--text-secondary)',
+            marginBottom: 10,
+          }}
+        >
           Deposit Amounts
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -867,153 +1020,136 @@ export default function PoolPage() {
   );
 
   return (
-    <div className="page-narrow">
-      {/* ── Page header ── */}
-      <motion.div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: 12,
-          marginBottom: 20,
-        }}
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-      >
-        <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Liquidity Pools</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', paddingBottom: 80 }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px' }}>
+
+        {/* ── Page header ── */}
+        <motion.div
+          style={{ paddingTop: 52, paddingBottom: 28 }}
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          <h1 className="page-heading">Liquidity Pools</h1>
+          <p style={{ fontSize: 15, color: 'var(--text-secondary)', margin: 0 }}>
             Add liquidity to earn fees on every swap in a pool.
           </p>
-        </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        </motion.div>
+
+        {/* ── Mode switcher — stake-subnav style ── */}
+        <div className="stake-subnav" style={{ marginBottom: 36 }}>
           {(['existing', 'new'] as const).map(m => (
-            <motion.button
+            <button
               key={m}
-              type="button"
+              className={`stake-subnav-tab${poolMode === m ? ' active' : ''}`}
               onClick={() => { setPoolMode(m); if (m === 'new') setSelectedIndexPool(null); }}
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              style={{
-                padding: '8px 16px',
-                borderRadius: 10,
-                fontWeight: 600,
-                fontSize: 13,
-                cursor: 'pointer',
-                border: '1px solid',
-                background: poolMode === m ? 'rgba(88,166,255,0.15)' : 'var(--bg-secondary)',
-                borderColor: poolMode === m ? 'var(--accent-primary)' : 'var(--border)',
-                color: poolMode === m ? 'var(--accent-primary)' : 'var(--text-secondary)',
-              }}
             >
               {m === 'existing' ? 'Existing Pool' : 'New Pool'}
-            </motion.button>
+            </button>
           ))}
         </div>
-      </motion.div>
 
-      {/* ── Existing Pool: index table + form ── */}
-      {poolMode === 'existing' && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25 }}
-        >
-          {/* Error banner */}
-          {indexError && (
-            <div className="warning-box" style={{ marginBottom: 12 }}>
-              Could not load pool list: {indexError}
-            </div>
-          )}
-
-          {/* Pools index table */}
-          <DataTable
-            title="Registered Pools"
-            subtitle="Pools registered on the indexer API. Click + Add Liquidity on any row to deposit into that pool."
-            columns={poolsIndexColumns}
-            data={indexRows}
-            loading={indexLoading}
-            pageSize={POOLS_INDEX_PAGE_SIZE}
-            serverPaginated
-            totalRowCount={indexTotal}
-            currentPage={indexPage}
-            initialSort={{ key: 'createdAt', dir: 'desc' }}
-            onSort={onPoolsTableSort}
-            onPageChange={p => setIndexPage(p)}
-            emptyText="No pools returned from the API"
-          />
-
-          {/* ── Liquidity form section ── */}
-          <div ref={liquidityFormRef} style={{ marginTop: 28 }}>
-            {/* Section header / selected pool banner */}
-            <motion.div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: 10,
-                marginBottom: 14,
-              }}
-              layout
-            >
-              <div>
-                <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Add Liquidity</h2>
-                <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
-                  {selectedIndexPool
-                    ? `Depositing into ${selectedIndexPool.pair} · ${selectedIndexPool.feeLabel}`
-                    : 'Select a pool above or configure the pair manually.'}
-                </p>
+        {/* ── Existing Pool: index table + form ── */}
+        {poolMode === 'existing' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+          >
+            {/* Error banner */}
+            {indexError && (
+              <div className="warning-box" style={{ marginBottom: 12 }}>
+                Could not load pool list: {indexError}
               </div>
-              <AnimatePresence>
-                {selectedIndexPool && (
-                  <motion.button
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ duration: 0.15 }}
-                    onClick={() => setSelectedIndexPool(null)}
-                    style={{
-                      padding: '5px 12px',
-                      borderRadius: 8,
-                      fontSize: 12,
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      border: '1px solid var(--border)',
-                      background: 'var(--bg-secondary)',
-                      color: 'var(--text-secondary)',
-                    }}
-                    whileHover={{ borderColor: 'var(--accent-danger)', color: 'var(--accent-danger)' }}
-                  >
-                    ✕ Clear selection
-                  </motion.button>
-                )}
-              </AnimatePresence>
-            </motion.div>
+            )}
+
+            {/* Pools index table */}
+            <ScrollReveal>
+              <DataTable
+                title="Registered Pools"
+                subtitle="Pools registered on the indexer API. Click + Add Liquidity on any row to deposit into that pool."
+                columns={poolsIndexColumns}
+                data={indexRows}
+                loading={indexLoading}
+                pageSize={POOLS_INDEX_PAGE_SIZE}
+                serverPaginated
+                totalRowCount={indexTotal}
+                currentPage={indexPage}
+                initialSort={{ key: 'createdAt', dir: 'desc' }}
+                onSort={onPoolsTableSort}
+                onPageChange={p => setIndexPage(p)}
+                emptyText="No pools returned from the API"
+              />
+            </ScrollReveal>
+
+            {/* ── Liquidity form section ── */}
+            <div ref={liquidityFormRef} style={{ marginTop: 52, maxWidth: 560, marginLeft: 'auto', marginRight: 'auto' }}>
+              <SectionHeader
+                title="Add Liquidity"
+                subtitle={
+                  selectedIndexPool
+                    ? `Depositing into ${selectedIndexPool.pair} · ${selectedIndexPool.feeLabel}`
+                    : 'Select a pool above or configure the pair manually.'
+                }
+                right={
+                  selectedIndexPool
+                    ? (
+                      <AnimatePresence>
+                        <motion.button
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          transition={{ duration: 0.15 }}
+                          onClick={() => setSelectedIndexPool(null)}
+                          style={{
+                            padding: '5px 12px',
+                            borderRadius: 8,
+                            fontSize: 12,
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            border: '1px solid var(--border)',
+                            background: 'var(--bg-secondary)',
+                            color: 'var(--text-secondary)',
+                          }}
+                          whileHover={{ borderColor: 'var(--accent-danger)', color: 'var(--accent-danger)' }}
+                        >
+                          ✕ Clear selection
+                        </motion.button>
+                      </AnimatePresence>
+                    )
+                    : undefined
+                }
+              />
+
+              {/* Pool stats glass cards */}
+              {poolStatsSection}
+
+              {liquidityForm}
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── New Pool: form only ── */}
+        {poolMode === 'new' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+            style={{ maxWidth: 560, marginLeft: 'auto', marginRight: 'auto' }}
+          >
+            <SectionHeader
+              title="Create New Pool"
+              subtitle="Deploy a new pool and seed it with initial liquidity in one step."
+            />
+
+            {/* Pool stats if pool already exists with this config */}
+            {poolStatsSection}
 
             {liquidityForm}
-          </div>
-        </motion.div>
-      )}
+          </motion.div>
+        )}
 
-      {/* ── New Pool: form only ── */}
-      {poolMode === 'new' && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25 }}
-        >
-          <div style={{ marginBottom: 14 }}>
-            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Create New Pool</h2>
-            <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
-              Deploy a new pool and seed it with initial liquidity in one step.
-            </p>
-          </div>
-          {liquidityForm}
-        </motion.div>
-      )}
+      </div>
     </div>
   );
 }
