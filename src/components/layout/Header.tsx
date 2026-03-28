@@ -25,9 +25,9 @@ export default function Header() {
             fontSize: 13, fontWeight: 700,
             letterSpacing: -0.5,
           }}>
-            UL
+            FS
           </div>
-          <span style={{ fontWeight: 700, fontSize: 18 }}>UniLite Pro</span>
+          <span style={{ fontWeight: 700, fontSize: 18 }}>Flux Swap</span>
           <span className="badge" style={{ marginLeft: 4 }}>v3</span>
         </div>
 
@@ -41,6 +41,9 @@ export default function Header() {
           </NavLink>
           <NavLink to="/positions" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
             Positions
+          </NavLink>
+          <NavLink to="/activity" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+            Activity
           </NavLink>
         </nav>
 

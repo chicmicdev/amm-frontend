@@ -86,3 +86,13 @@ export interface TransactionResult {
   hash: string;
   status: 'pending' | 'success' | 'failed';
 }
+
+export type TxHistoryKind = 'swap' | 'add_liquidity' | 'remove_liquidity' | 'collect_fees';
+
+export interface TxHistoryEntry {
+  id: string;
+  hash: string;
+  kind: TxHistoryKind;
+  createdAt: number;
+  summary: string;
+}
