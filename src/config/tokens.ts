@@ -49,6 +49,7 @@ export const LISTED_TOKEN_META: ListedTokenMeta[] = [
   },
 ];
 
+
 export const LISTED_TOKEN_ADDRESSES = LISTED_TOKEN_META.map(t => t.address);
 
 export function getListedTokenMeta(address: string): ListedTokenMeta | undefined {
