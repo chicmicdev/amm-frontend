@@ -8,6 +8,7 @@ import StatsBar from '../components/staking/StatsBar';
 import RewardsChart from '../components/staking/RewardsChart';
 import TransactionTable from '../components/staking/TransactionTable';
 import ScrollReveal from '../components/common/ScrollReveal';
+import TiltCard from '../components/common/TiltCard';
 import { getUserPosition, getStakingStats, postClaim, postUnstake } from '../services/api/stakingService';
 
 type SubTab = 'stake' | 'portfolio' | 'history';
@@ -92,10 +93,14 @@ function StakeTokensTab() {
       {/* 2-col: stake card + stats */}
       <div className="stake-tokens-grid">
         <ScrollReveal delay={0.05} variant="scaleUp">
-          <StakeCard />
+          <TiltCard maxTilt={8}>
+            <StakeCard />
+          </TiltCard>
         </ScrollReveal>
         <ScrollReveal delay={0.18} variant="scaleUp">
-          <StatsBar />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <StatsBar />
+          </div>
         </ScrollReveal>
       </div>
     </>
