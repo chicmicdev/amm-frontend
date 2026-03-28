@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { Toaster } from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import toast from 'react-hot-toast';
 import { useAppKitAccount } from '@reown/appkit/react';
 import StakeCard from '../components/staking/StakeCard';
 import StatsBar from '../components/staking/StatsBar';

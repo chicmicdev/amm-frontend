@@ -8,6 +8,7 @@ import { CHAIN_ID, CONTRACTS } from '../../config/contracts';
 import { erc20Abi } from '../../contracts/abis';
 import { stakingPoolAbi } from '../../contracts/stakingPoolAbi';
 import { collectViemErrorText } from '../../utils/viemErrors';
+import { devError, devWarn } from '../../utils/devLog';
 import { ammWagmiConfig, getAmmPublicClient } from './ammClient';
 import { STAKING_REWARD_MODE_APR } from '../../utils/stakingFormat';
 import { fetchTokenDecimals, fetchTokenSymbol } from './tokenMetadata';
@@ -33,6 +34,7 @@ export interface StakingPoolMeta {
 type UserInfoTuple = readonly [bigint, bigint, bigint, bigint];
 
 export async function fetchStakingPoolMeta(): Promise<StakingPoolMeta> {
+  try {
   const pc = getAmmPublicClient();
   const [stakingToken, rewardToken, aprBps, totalStaked, rewardMode, rewardPerBlock] = await Promise.all([
     readContract(pc, {
@@ -87,6 +89,10 @@ export async function fetchStakingPoolMeta(): Promise<StakingPoolMeta> {
     isAprMode,
     rewardPerBlockHuman: Number.parseFloat(formatUnits(rewardPerBlock, rewardDecimals)),
   };
+  } catch (e) {
+    devError('staking/read', 'fetchStakingPoolMeta failed', collectViemErrorText(e), e);
+    throw e;
+  }
 }
 
 export async function fetchStakingUserRaw(walletAddress: string): Promise<{
@@ -94,6 +100,7 @@ export async function fetchStakingUserRaw(walletAddress: string): Promise<{
   pendingWei: bigint;
   lastRewardTs: bigint;
 }> {
+  try {
   const pc = getAmmPublicClient();
   const a = walletAddress as Address;
   const [info, pending] = await Promise.all([
@@ -115,10 +122,15 @@ export async function fetchStakingUserRaw(walletAddress: string): Promise<{
     pendingWei: pending,
     lastRewardTs: info[1],
   };
+  } catch (e) {
+    devError('staking/read', 'fetchStakingUserRaw failed', { wallet: walletAddress }, collectViemErrorText(e), e);
+    throw e;
+  }
 }
 
-function normalizeTxError(err: unknown): Error {
+function normalizeTxError(err: unknown, operation: string): Error {
   const text = collectViemErrorText(err);
+  devError('tx/staking', operation, text, err);
   if (/User rejected|User denied|denied transaction/i.test(text)) {
     return new Error('Transaction was rejected in your wallet.');
   }
@@ -147,7 +159,10 @@ async function ensureStakeAllowance(
     args: [poolAddr, maxUint256],
   });
   const receipt = await waitForTransactionReceipt(config, { hash, chainId: CHAIN_ID });
-  if (receipt.status !== 'success') throw new Error('Approve transaction failed.');
+  if (receipt.status !== 'success') {
+    devError('tx/staking', 'approveStakingToken: receipt not success', { hash, stakingToken });
+    throw new Error('Approve transaction failed.');
+  }
 }
 
 export async function stakeOnChain(amountHuman: string): Promise<{ txHash: `0x${string}` }> {
@@ -169,7 +184,7 @@ export async function stakeOnChain(amountHuman: string): Promise<{ txHash: `0x${
     if (receipt.status !== 'success') throw new Error('Stake transaction reverted.');
     return { txHash: hash };
   } catch (e) {
-    throw normalizeTxError(e);
+    throw normalizeTxError(e, 'stake');
   }
 }
 
@@ -191,7 +206,7 @@ export async function withdrawOnChain(amountHuman: string): Promise<{ txHash: `0
     if (receipt.status !== 'success') throw new Error('Unstake transaction reverted.');
     return { txHash: hash };
   } catch (e) {
-    throw normalizeTxError(e);
+    throw normalizeTxError(e, 'withdraw');
   }
 }
 
@@ -212,7 +227,7 @@ export async function withdrawAllOnChain(): Promise<{ txHash: `0x${string}` }> {
     if (receipt.status !== 'success') throw new Error('Unstake transaction reverted.');
     return { txHash: hash };
   } catch (e) {
-    throw normalizeTxError(e);
+    throw normalizeTxError(e, 'withdrawAll');
   }
 }
 
@@ -240,12 +255,16 @@ export async function claimOnChain(): Promise<{ txHash: `0x${string}`; paidHuman
       if (last?.args && typeof last.args === 'object' && 'reward' in last.args) {
         paidWei = last.args.reward as bigint;
       }
-    } catch {
+    } catch (parseErr) {
       paidWei = 0n;
+      devWarn('tx/staking', 'claim: could not parse RewardPaid from receipt', { hash }, parseErr);
+    }
+    if (paidWei === 0n) {
+      devWarn('tx/staking', 'claim: paid amount is 0 (no RewardPaid event or zero payout)', { hash });
     }
     const paidHuman = Number.parseFloat(formatUnits(paidWei, meta.rewardDecimals));
     return { txHash: hash, paidHuman };
   } catch (e) {
-    throw normalizeTxError(e);
+    throw normalizeTxError(e, 'claim');
   }
 }

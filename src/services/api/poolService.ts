@@ -10,7 +10,7 @@ import {
 } from 'viem';
 import { readContract, writeContract, simulateContract } from 'viem/actions';
 import { getWalletClient, waitForTransactionReceipt, getAccount } from 'wagmi/actions';
-import { CHAIN_ID, CONTRACTS, CONTRACT_ERRORS, FEE_TIERS } from '../../config/contracts';
+import { CHAIN_ID, CONTRACTS, CONTRACT_ERRORS, FEE_TIERS, GAS } from '../../config/contracts';
 import type { Pool, PoolStats, SwapParams, SwapQuote } from '../../types';
 import { LISTED_TOKEN_ADDRESSES, getListedTokenMeta } from '../../config/tokens';
 import { factoryAbi, poolAbi, swapRouterAbi, erc20Abi } from '../../contracts/abis';
@@ -53,6 +53,11 @@ function normalizeSwapError(err: unknown): Error {
       CONTRACT_ERRORS['Too little received'] ?? 'Slippage too low or price moved — increase slippage and retry.'
     );
   }
+  if (/execution reverted/i.test(text)) {
+    return new Error(
+      'Swap reverted on-chain. The pool likely has no liquidity for this pair, or the RPC did not return a reason. Verify liquidity exists for this pair and fee tier, or try a different RPC endpoint (VITE_POLYGON_AMOY_RPC).'
+    );
+  }
   if (err instanceof Error) return err;
   return new Error(text || 'Swap failed');
 }
@@ -92,6 +97,9 @@ async function writeApproveWithSimulation(
       functionName: 'approve',
       args: [spender, value],
       account,
+      gas: GAS.limits.approve,
+      maxFeePerGas: GAS.maxFeePerGas,
+      maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
     });
     const hash = await walletClient.writeContract(request);
     const receipt = await waitForTransactionReceipt(config, { hash, chainId: CHAIN_ID });
@@ -424,6 +432,19 @@ export async function executeSwap(params: SwapParams): Promise<{ hash: string }>
     devLog('tx/swap', 'approve confirmed for exact swap amount', { amountInWei: amountInWei.toString() });
   }
 
+  // Fail fast if the pool has no liquidity — the swap will always revert in that case.
+  const poolForLiq = await getPool(tokenIn.address, tokenOut.address, params.fee);
+  if (poolForLiq) {
+    const poolLiquidity = (await readContract(pc, {
+      address: poolForLiq.address as Address,
+      abi: poolAbi,
+      functionName: 'liquidity',
+    })) as bigint;
+    if (poolLiquidity === 0n) {
+      throw new Error('This pool has no liquidity. Add liquidity first before swapping.');
+    }
+  }
+
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800);
   const baseParams = {
     tokenIn: tokenIn.address as Address,
@@ -436,6 +457,12 @@ export async function executeSwap(params: SwapParams): Promise<{ hash: string }>
     sqrtPriceLimitX96: 0n,
   };
 
+  const gasOverrides = {
+    gas: GAS.limits.swap,
+    maxFeePerGas: GAS.maxFeePerGas,
+    maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+  };
+
   /** Real output at current pool state (tick traversal); spot math in getSwapQuote often overshoots → "Too little received". */
   let simulatedOut: bigint;
   try {
@@ -445,6 +472,7 @@ export async function executeSwap(params: SwapParams): Promise<{ hash: string }>
       functionName: 'exactInputSingle',
       args: [baseParams],
       account: user,
+      ...gasOverrides,
     });
     simulatedOut = dry.result as bigint;
   } catch (e) {
@@ -472,6 +500,7 @@ export async function executeSwap(params: SwapParams): Promise<{ hash: string }>
       functionName: 'exactInputSingle',
       args: [swapSingleParams],
       account: user,
+      ...gasOverrides,
     });
     hash = await walletClient.writeContract(request);
   } catch (e) {

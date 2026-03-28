@@ -34,6 +34,29 @@ export const FEE_TO_TICK_SPACING: Record<number, number> = {
 export const MAX_TICK = 887272;
 export const MIN_TICK = -887272;
 
+/**
+ * Explicit gas overrides for Polygon Amoy testnet.
+ * Amoy RPCs occasionally return wildly inflated maxFeePerGas estimates that
+ * exceed viem's 1-ether built-in cap. Capping both the price and the gas limit
+ * keeps fees predictable while leaving plenty of headroom for each operation.
+ *
+ * maxFeePerGas = 100 gwei  (Amoy rarely goes above 30 gwei in practice)
+ * maxPriorityFeePerGas = 30 gwei
+ */
+export const GAS = {
+  maxFeePerGas:         100_000_000_000n, // 100 gwei
+  maxPriorityFeePerGas:  30_000_000_000n, //  30 gwei
+  limits: {
+    approve:           80_000n,  // standard ERC-20 approve
+    swap:             300_000n,  // Uniswap V3 exactInputSingle
+    mint:             500_000n,  // NPM mint (new position)
+    increaseLiquidity: 400_000n, // NPM increaseLiquidity
+    decreaseLiquidity: 300_000n, // NPM decreaseLiquidity
+    collect:          200_000n,  // NPM collect fees
+    burn:             150_000n,  // NPM burn (close position)
+  },
+} as const;
+
 export const CONTRACT_ERRORS: Record<string, string> = {
   IT: 'The two tokens must be different',
   '0A': 'Token address cannot be zero',
