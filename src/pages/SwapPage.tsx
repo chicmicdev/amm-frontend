@@ -40,7 +40,7 @@ export default function SwapPage() {
   const [tokenOut, setTokenOut] = useState<Token>(DEFAULT_TOKEN_OUT);
   const [amountIn, setAmountIn] = useState('');
   const [amountOut, setAmountOut] = useState('');
-  const [fee] = useState(3000);
+  const [fee, setFee] = useState(3000);
   const [slippage, setSlippage] = useState(0.5);
   const [quote, setQuote] = useState<SwapQuote | null>(null);
   const [loadingQuote, setLoadingQuote] = useState(false);

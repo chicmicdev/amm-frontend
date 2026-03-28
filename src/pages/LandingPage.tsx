@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import {
   motion,
@@ -8,7 +8,9 @@ import {
   useInView,
   useMotionValue,
 } from 'framer-motion';
+import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import TiltCard from '../components/common/TiltCard';
+import { formatAddress } from '../utils/formatUtils';
 
 /* ─── Particles ──────────────────────────────────────────────────────────── */
 function ParticlesCanvas() {
@@ -130,51 +132,143 @@ function Counter({ to, prefix = '', suffix = '', decimals = 0 }: { to: number; p
   return <span ref={ref}>{prefix}{val.toFixed(decimals)}{suffix}</span>;
 }
 
-const fadeUp = { hidden: { opacity: 0, y: 32 }, show: { opacity: 1, y: 0, transition: { duration: 0.65, ease: [0.22, 1, 0.36, 1] } } };
+const fadeUp = { hidden: { opacity: 0, y: 32 }, show: { opacity: 1, y: 0, transition: { duration: 0.65, ease: [0.22, 1, 0.36, 1] as const } } };
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.11 } } };
+
+const LANDING_NAV_LINKS = ['Stake', 'Swap', 'Pool', 'Positions'] as const;
 
 /* ─── Nav ────────────────────────────────────────────────────────────────── */
 function Nav() {
+  const { open } = useAppKit();
+  const { address, isConnected } = useAppKitAccount();
   const [scrolled, setScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', h, { passive: true });
     return () => window.removeEventListener('scroll', h);
   }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    const onResize = () => {
+      if (window.innerWidth > 768) setMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onResize);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onResize);
+      document.body.style.overflow = prev;
+    };
+  }, [menuOpen]);
+
+  const linkStyle: CSSProperties = { color: '#9ca3af', fontSize: 14, fontWeight: 500, textDecoration: 'none', transition: 'color 0.2s' };
+
   return (
-    <motion.nav
-      initial={{ y: -20, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.6 }}
-      style={{
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-        padding: '0 32px', height: 64,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
-        background: scrolled ? 'rgba(10,14,26,0.88)' : 'transparent',
-        borderBottom: scrolled ? '1px solid rgba(55,65,100,0.4)' : 'none',
-        transition: 'background 0.3s, border-color 0.3s',
-      }}
-    >
-      <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
-        <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: 'white' }}>FS</div>
-        <span style={{ fontWeight: 800, fontSize: 17, color: '#f9fafb' }}>FLUX <span style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>SWAP</span></span>
-      </Link>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
-        {['Stake', 'Swap', 'Pool', 'Positions'].map(l => (
-          <Link key={l} to={`/${l.toLowerCase()}`} style={{ color: '#9ca3af', fontSize: 14, fontWeight: 500, textDecoration: 'none', transition: 'color 0.2s' }}
-            onMouseEnter={e => (e.currentTarget.style.color = '#f9fafb')}
-            onMouseLeave={e => (e.currentTarget.style.color = '#9ca3af')}
-          >{l}</Link>
-        ))}
+    <>
+      <motion.nav
+        className="landing-nav"
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.6 }}
+        style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 200,
+          height: 64,
+          display: 'flex', alignItems: 'center',
+          backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+          background: scrolled ? 'rgba(10,14,26,0.88)' : 'transparent',
+          borderBottom: scrolled ? '1px solid rgba(55,65,100,0.4)' : 'none',
+          transition: 'background 0.3s, border-color 0.3s',
+        }}
+      >
+        <div className="landing-nav-inner">
+          <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', flexShrink: 0 }} onClick={() => setMenuOpen(false)}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: 'white' }}>FS</div>
+            <span style={{ fontWeight: 800, fontSize: 17, color: '#f9fafb' }}>FLUX <span style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>SWAP</span></span>
+          </Link>
+          <div className="landing-nav-links">
+            {LANDING_NAV_LINKS.map(l => (
+              <Link
+                key={l}
+                to={`/${l.toLowerCase()}`}
+                style={linkStyle}
+                onMouseEnter={e => (e.currentTarget.style.color = '#f9fafb')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#9ca3af')}
+              >{l}</Link>
+            ))}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+            <motion.button
+              type="button"
+              className="landing-nav-connect"
+              whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+              onClick={() => open()}
+              style={{
+                background: isConnected
+                  ? 'rgba(17,24,39,0.85)'
+                  : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+                color: '#fff',
+                border: isConnected ? '1px solid rgba(55,65,100,0.55)' : 'none',
+                borderRadius: 12,
+                padding: '9px 18px',
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {isConnected ? (
+                <>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#10b981', flexShrink: 0 }} />
+                  {formatAddress(address || '')}
+                </>
+              ) : (
+                'Connect Wallet'
+              )}
+            </motion.button>
+            <button
+              type="button"
+              className="landing-nav-toggle"
+              aria-expanded={menuOpen}
+              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+              onClick={() => setMenuOpen(o => !o)}
+            >
+              {menuOpen ? (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M18 6L6 18M6 6l12 12" /></svg>
+              ) : (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+              )}
+            </button>
+          </div>
+        </div>
+      </motion.nav>
+      <div className={`landing-nav-drawer ${menuOpen ? 'landing-nav-drawer-open' : ''}`} id="landing-nav-menu" role="navigation" aria-label="Mobile">
+        <div className="landing-nav-drawer-links">
+          {LANDING_NAV_LINKS.map(l => (
+            <Link key={l} to={`/${l.toLowerCase()}`} onClick={() => setMenuOpen(false)}>{l}</Link>
+          ))}
+        </div>
+        <div className="landing-nav-drawer-cta">
+          <button
+            type="button"
+            className={isConnected ? 'landing-nav-drawer-wallet-connected' : undefined}
+            onClick={() => { open(); setMenuOpen(false); }}
+          >
+            {isConnected ? formatAddress(address || '') : 'Connect Wallet'}
+          </button>
+        </div>
       </div>
-      <Link to="/stake">
-        <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
-          style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 'none', borderRadius: 12, padding: '9px 22px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-          Launch App
-        </motion.button>
-      </Link>
-    </motion.nav>
+    </>
   );
 }
 
@@ -198,12 +292,14 @@ function Hero() {
   const springBob = useSpring(bobY, { stiffness: 60, damping: 12 });
 
   return (
-    <section style={{
-      position: 'relative', minHeight: '100vh',
-      display: 'flex', alignItems: 'center',
-      overflow: 'hidden',
-      background: 'radial-gradient(ellipse 80% 60% at 60% 0%, rgba(99,102,241,0.14) 0%, transparent 70%), var(--bg-primary)',
-    }}>
+    <section
+      className="landing-stack-layer landing-stack-z1"
+      style={{
+        display: 'flex', alignItems: 'center',
+        overflow: 'hidden',
+        background: 'radial-gradient(ellipse 80% 60% at 60% 0%, rgba(99,102,241,0.14) 0%, transparent 70%), var(--bg-primary)',
+      }}
+    >
       <ParticlesCanvas />
       {/* Glow blobs */}
       {[
@@ -214,10 +310,10 @@ function Hero() {
         <div key={i} style={{ position: 'absolute', top: b.top, left: b.left, right: b.right as string | undefined, width: b.w, height: b.h, background: b.color, borderRadius: '50%', filter: `blur(${b.blur}px)`, pointerEvents: 'none' }} />
       ))}
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '80px 32px 0', width: '100%', position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 60 }}>
+      <div className="landing-hero-inner landing-hero-row">
 
         {/* ── Left: copy ── */}
-        <motion.div style={{ y: textY, opacity: textOp, flex: 1, minWidth: 0 }}>
+        <motion.div className="landing-hero-copy" style={{ y: textY, opacity: textOp }}>
           <motion.div initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5, delay: 0.1 }} style={{ marginBottom: 28 }}>
             <span style={{ background: 'rgba(99,102,241,0.14)', border: '1px solid rgba(99,102,241,0.34)', color: '#818cf8', borderRadius: 999, padding: '6px 16px', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>
               ⚡ NOW LIVE ON TESTNET
@@ -239,6 +335,7 @@ function Hero() {
           <motion.p
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.35 }}
+            className="landing-hero-lead"
             style={{ fontSize: 'clamp(15px, 2vw, 19px)', color: '#9ca3af', maxWidth: 440, margin: '0 0 40px', lineHeight: 1.7 }}
           >
             Stake, swap and provide liquidity — all in one protocol. Earn up to{' '}
@@ -246,8 +343,8 @@ function Hero() {
             with audited, transparent smart contracts.
           </motion.p>
 
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.5 }}
-            style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+          <motion.div className="landing-hero-ctas" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.5 }}
+            style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
             <Link to="/stake">
               <motion.button whileHover={{ scale: 1.05, boxShadow: '0 0 36px rgba(99,102,241,0.55)' }} whileTap={{ scale: 0.97 }}
                 style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 'none', borderRadius: 14, padding: '14px 34px', fontSize: 16, fontWeight: 800, cursor: 'pointer' }}>
@@ -262,8 +359,7 @@ function Hero() {
           </motion.div>
 
           {/* Mini stats */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9, duration: 0.6 }}
-            style={{ display: 'flex', gap: 32, marginTop: 44 }}>
+          <motion.div className="landing-hero-stats" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9, duration: 0.6 }}>
             {[['$2.4M', 'Total Locked'], ['12%', 'APR'], ['1,420+', 'Stakers']].map(([v, l]) => (
               <div key={l}>
                 <div style={{ fontSize: 20, fontWeight: 800, color: '#e6edf3', letterSpacing: '-0.02em' }}>{v}</div>
@@ -275,13 +371,14 @@ function Hero() {
 
         {/* ── Right: floating 3-D mockup ── */}
         <motion.div
+          className="landing-hero-mockup-col"
           initial={{ opacity: 0, x: 40 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.9, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
-          style={{ flexShrink: 0, display: 'flex', justifyContent: 'center' }}
         >
           {/* Outer perspective wrapper (scroll tilt) */}
-          <div style={{ perspective: '1200px' }}>
+          <div className="landing-hero-mockup-scale">
+            <div style={{ perspective: '1200px' }}>
             <motion.div
               style={{
                 y: springBob,
@@ -301,71 +398,19 @@ function Hero() {
                 pointerEvents: 'none',
               }} />
             </motion.div>
+            </div>
           </div>
         </motion.div>
       </div>
 
       {/* Scroll indicator */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.4 }}
+      <motion.div className="landing-hero-scroll-hint" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.4 }}
         style={{ position: 'absolute', bottom: 36, left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 10, color: '#4b5563', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Scroll</span>
         <motion.div animate={{ y: [0, 8, 0] }} transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
           style={{ width: 20, height: 34, border: '1.5px solid rgba(99,102,241,0.35)', borderRadius: 999, display: 'flex', justifyContent: 'center', paddingTop: 5 }}>
           <div style={{ width: 3, height: 8, borderRadius: 999, background: 'rgba(99,102,241,0.7)' }} />
         </motion.div>
-      </motion.div>
-    </section>
-  );
-}
-
-/* ─── Apple-style scroll-driven 3-D showcase ─────────────────────────────── */
-function ScrollShowcase() {
-  const sectionRef = useRef<HTMLDivElement>(null);
-  const { scrollYProgress } = useScroll({
-    target: sectionRef,
-    offset: ['start end', '0.65 start'],
-  });
-
-  /* Drive rotation from scroll */
-  const rX  = useTransform(scrollYProgress, [0, 1], [28,  0]);
-  const rY  = useTransform(scrollYProgress, [0, 1], [-22, 0]);
-  const sc  = useTransform(scrollYProgress, [0, 1], [0.6, 1]);
-  const op  = useTransform(scrollYProgress, [0, 0.15, 1], [0, 1, 1]);
-  const sY  = useTransform(scrollYProgress, [0, 1], [60, 0]);
-
-  const srX = useSpring(rX, { stiffness: 55, damping: 16 });
-  const srY = useSpring(rY, { stiffness: 55, damping: 16 });
-  const sSc = useSpring(sc, { stiffness: 55, damping: 18 });
-
-  const inView = useInView(sectionRef, { once: true, margin: '-100px' });
-
-  return (`
-  
-  `);
-}
-
-/* ─── Live Stats ─────────────────────────────────────────────────────────── */
-function LiveStats() {
-  const ref = useRef(null);
-  const inView = useInView(ref, { once: true, margin: '-80px' });
-  const stats = [
-    { label: 'Total Value Locked', value: 2.4, prefix: '$', suffix: 'M', decimals: 1, color: '#e6edf3' },
-    { label: 'Current APR',        value: 12.00, suffix: '%', decimals: 2, color: '#10b981' },
-    { label: 'Active Stakers',     value: 1420,  suffix: '+', decimals: 0, color: '#818cf8' },
-    { label: 'Transactions',       value: 48.7,  suffix: 'K', decimals: 1, color: '#f59e0b' },
-  ];
-  return (
-    <section ref={ref} style={{ background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '52px 32px' }}>
-      <motion.div variants={stagger} initial="hidden" animate={inView ? 'show' : 'hidden'}
-        style={{ maxWidth: 1100, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 24 }}>
-        {stats.map(s => (
-          <motion.div key={s.label} variants={fadeUp} style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 'clamp(28px,3.5vw,44px)', fontWeight: 900, color: s.color, letterSpacing: '-0.03em', lineHeight: 1 }}>
-              {inView && <Counter to={s.value} prefix={s.prefix} suffix={s.suffix} decimals={s.decimals} />}
-            </div>
-            <div style={{ fontSize: 13, color: '#9ca3af', marginTop: 8, fontWeight: 500 }}>{s.label}</div>
-          </motion.div>
-        ))}
       </motion.div>
     </section>
   );
@@ -379,158 +424,171 @@ const FEATURES = [
   { icon: '◎',  bg: 'rgba(245,158,11,0.11)',  border: 'rgba(245,158,11,0.24)',  color: '#f59e0b', glow: 'rgba(245,158,11,0.08)',  title: 'Manage Positions',    desc: 'Track all your active positions, pending rewards, and portfolio performance in real time.',          link: '/positions' },
 ];
 
-function Features() {
-  const ref = useRef(null);
-  const inView = useInView(ref, { once: true, margin: '-60px' });
-  return (
-    <section id="features" ref={ref} style={{ padding: '100px 32px', maxWidth: 1100, margin: '0 auto' }}>
-      <motion.div variants={fadeUp} initial="hidden" animate={inView ? 'show' : 'hidden'} style={{ textAlign: 'center', marginBottom: 64 }}>
-        <span style={{ display: 'inline-block', background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.28)', color: '#818cf8', borderRadius: 999, padding: '5px 16px', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 18 }}>Protocol Features</span>
-        <h2 style={{ fontSize: 'clamp(26px,4vw,48px)', fontWeight: 900, margin: '0 0 14px', letterSpacing: '-0.03em', color: '#e6edf3' }}>
-          Everything DeFi.{' '}
-          <span style={{ background: 'linear-gradient(135deg,#f59e0b,#fbbf24)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>One Platform.</span>
-        </h2>
-        <p style={{ fontSize: 16, color: '#9ca3af', maxWidth: 480, margin: '0 auto' }}>Built for speed, designed for crypto natives. No compromises.</p>
-      </motion.div>
-
-      <motion.div variants={stagger} initial="hidden" animate={inView ? 'show' : 'hidden'}
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 20 }}>
-        {FEATURES.map(f => (
-          <motion.div key={f.title} variants={fadeUp}>
-            <TiltCard maxTilt={14} style={{ height: '100%' }}>
-              <motion.div
-                whileHover={{ borderColor: f.border, boxShadow: `0 20px 52px ${f.glow}` }}
-                transition={{ duration: 0.25 }}
-                onClick={() => window.location.href = f.link}
-                style={{
-                  background: 'var(--bg-card)', border: '1px solid var(--border)',
-                  borderRadius: 20, padding: '28px 24px', cursor: 'pointer',
-                  height: '100%', boxSizing: 'border-box',
-                  transition: 'border-color 0.3s',
-                }}
-              >
-                <div style={{ width: 48, height: 48, borderRadius: 14, background: f.bg, border: `1px solid ${f.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: f.color, marginBottom: 20 }}>{f.icon}</div>
-                <h3 style={{ margin: '0 0 10px', fontSize: 18, fontWeight: 800, color: '#e6edf3' }}>{f.title}</h3>
-                <p style={{ margin: 0, fontSize: 14, color: '#9ca3af', lineHeight: 1.65 }}>{f.desc}</p>
-                <div style={{ marginTop: 20, fontSize: 13, fontWeight: 700, color: f.color }}>Explore →</div>
-              </motion.div>
-            </TiltCard>
-          </motion.div>
-        ))}
-      </motion.div>
-    </section>
-  );
-}
-
-/* ─── How It Works ───────────────────────────────────────────────────────── */
 const STEPS = [
   { num: '01', title: 'Connect Your Wallet', desc: 'Link MetaMask, WalletConnect, or any EVM-compatible wallet in one click.', color: '#818cf8' },
   { num: '02', title: 'Choose Your Strategy', desc: 'Stake for passive yields, swap for price exposure, or pool for fee income.', color: '#10b981' },
   { num: '03', title: 'Earn & Compound',      desc: 'Watch rewards grow in real time. Claim and restake to compound your earnings.', color: '#f59e0b' },
 ];
 
-function HowItWorks() {
+/* ─── Features + How it works (merged stack slab) ────────────────────────── */
+function FeaturesAndHow() {
   const ref = useRef(null);
   const inView = useInView(ref, { once: true, margin: '-60px' });
   return (
-    <section ref={ref} style={{ padding: '100px 32px', background: 'radial-gradient(ellipse 60% 50% at 50% 50%,rgba(99,102,241,0.07) 0%,transparent 70%), var(--bg-secondary)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
-      <div style={{ maxWidth: 900, margin: '0 auto' }}>
-        <motion.div variants={fadeUp} initial="hidden" animate={inView ? 'show' : 'hidden'} style={{ textAlign: 'center', marginBottom: 60 }}>
-          <span style={{ display: 'inline-block', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.24)', color: '#10b981', borderRadius: 999, padding: '5px 16px', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 18 }}>How It Works</span>
-          <h2 style={{ fontSize: 'clamp(24px,3.5vw,44px)', fontWeight: 900, margin: 0, letterSpacing: '-0.03em', color: '#e6edf3' }}>Three steps to DeFi freedom.</h2>
-        </motion.div>
-        <motion.div variants={stagger} initial="hidden" animate={inView ? 'show' : 'hidden'} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {STEPS.map(s => (
-            <motion.div key={s.num} variants={fadeUp}>
-              <TiltCard maxTilt={6}>
-                <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 20, padding: '26px 30px', display: 'flex', alignItems: 'flex-start', gap: 26 }}>
-                  <div style={{ flexShrink: 0, fontSize: 'clamp(34px,5vw,52px)', fontWeight: 900, color: s.color, opacity: 0.22, lineHeight: 1 }}>{s.num}</div>
-                  <div>
-                    <h3 style={{ margin: '0 0 8px', fontSize: 19, fontWeight: 800, color: '#e6edf3' }}>{s.title}</h3>
-                    <p style={{ margin: 0, fontSize: 14, color: '#9ca3af', lineHeight: 1.65 }}>{s.desc}</p>
+    <section
+      id="features"
+      ref={ref}
+      className="landing-stack-layer landing-stack-z3"
+      style={{ background: 'var(--bg-primary)' }}
+    >
+      <div className="landing-section-pad landing-section-pad--features-head">
+        <div style={{ maxWidth: 1100, margin: '100px auto', width: '100%' }}>
+          <motion.div variants={fadeUp} initial="hidden" animate={inView ? 'show' : 'hidden'} style={{ textAlign: 'center', marginBottom: 28 }}>
+            <span style={{ display: 'inline-block', background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.28)', color: '#818cf8', borderRadius: 999, padding: '5px 16px', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>Protocol Features</span>
+            <h2 style={{ fontSize: 'clamp(26px,4vw,48px)', fontWeight: 900, margin: '0 0 8px', letterSpacing: '-0.03em', color: '#e6edf3' }}>
+              Everything DeFi.{' '}
+              <span style={{ background: 'linear-gradient(135deg,#f59e0b,#fbbf24)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>One Platform.</span>
+            </h2>
+            <p style={{ fontSize: 15, color: '#9ca3af', maxWidth: 480, margin: '0 auto', lineHeight: 1.55 }}>Built for speed, designed for crypto natives. No compromises.</p>
+          </motion.div>
+
+          <motion.div className="landing-features-grid mt-50" variants={stagger} initial="hidden" animate={inView ? 'show' : 'hidden'}>
+            {FEATURES.map(f => (
+              <motion.div key={f.title} variants={fadeUp}>
+                <TiltCard maxTilt={14} style={{ height: '100%' }}>
+                  <motion.div
+                    whileHover={{ borderColor: f.border, boxShadow: `0 20px 52px ${f.glow}` }}
+                    transition={{ duration: 0.25 }}
+                    onClick={() => window.location.href = f.link}
+                    style={{
+                      background: 'var(--bg-card)', border: '1px solid var(--border)',
+                      borderRadius: 20, padding: '28px 24px', cursor: 'pointer',
+                      height: '100%', boxSizing: 'border-box',
+                      transition: 'border-color 0.3s',
+                    }}
+                  >
+                    <div style={{ width: 48, height: 48, borderRadius: 14, background: f.bg, border: `1px solid ${f.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: f.color, marginBottom: 20 }}>{f.icon}</div>
+                    <h3 style={{ margin: '0 0 10px', fontSize: 18, fontWeight: 800, color: '#e6edf3' }}>{f.title}</h3>
+                    <p style={{ margin: 0, fontSize: 14, color: '#9ca3af', lineHeight: 1.65 }}>{f.desc}</p>
+                    <div style={{ marginTop: 20, fontSize: 13, fontWeight: 700, color: f.color }}>Explore →</div>
+                  </motion.div>
+                </TiltCard>
+              </motion.div>
+            ))}
+          </motion.div>
+        </div>
+      </div>
+
+      <div
+        className="landing-section-pad"
+        style={{
+          borderTop: '1px solid var(--border)',
+          background: 'radial-gradient(ellipse 60% 50% at 50% 0%,rgba(99,102,241,0.07) 0%,transparent 70%), var(--bg-secondary)',
+        }}
+      >
+        <div style={{ maxWidth: 900, margin: '0 auto', width: '100%' }}>
+          <motion.div variants={fadeUp} initial="hidden" animate={inView ? 'show' : 'hidden'} style={{ textAlign: 'center', marginBottom: 60 }}>
+            <span style={{ display: 'inline-block', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.24)', color: '#10b981', borderRadius: 999, padding: '5px 16px', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 18 }}>How It Works</span>
+            <h2 style={{ fontSize: 'clamp(24px,3.5vw,44px)', fontWeight: 900, margin: 0, letterSpacing: '-0.03em', color: '#e6edf3' }}>Three steps to DeFi freedom.</h2>
+          </motion.div>
+          <motion.div variants={stagger} initial="hidden" animate={inView ? 'show' : 'hidden'} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {STEPS.map(s => (
+              <motion.div key={s.num} variants={fadeUp}>
+                <TiltCard maxTilt={6}>
+                  <div className="landing-how-step" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 20, padding: '26px 30px', display: 'flex', alignItems: 'flex-start', gap: 26 }}>
+                    <div style={{ flexShrink: 0, fontSize: 'clamp(34px,5vw,52px)', fontWeight: 900, color: s.color, opacity: 0.22, lineHeight: 1 }}>{s.num}</div>
+                    <div>
+                      <h3 style={{ margin: '0 0 8px', fontSize: 19, fontWeight: 800, color: '#e6edf3' }}>{s.title}</h3>
+                      <p style={{ margin: 0, fontSize: 14, color: '#9ca3af', lineHeight: 1.65 }}>{s.desc}</p>
+                    </div>
                   </div>
-                </div>
-              </TiltCard>
-            </motion.div>
-          ))}
-        </motion.div>
+                </TiltCard>
+              </motion.div>
+            ))}
+          </motion.div>
+        </div>
       </div>
     </section>
   );
 }
 
-/* ─── CTA ────────────────────────────────────────────────────────────────── */
-function CTABanner() {
+/* ─── CTA + footer (merged closing block; footer fixed on desktop) ─────── */
+function CTAAndFooter() {
   const ref = useRef(null);
   const inView = useInView(ref, { once: true, margin: '-80px' });
   return (
-    <section ref={ref} style={{ padding: '100px 32px', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
-      <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 80% at 50% 50%,rgba(99,102,241,0.11) 0%,transparent 70%)', pointerEvents: 'none' }} />
-      <motion.div variants={stagger} initial="hidden" animate={inView ? 'show' : 'hidden'} style={{ position: 'relative', zIndex: 1, maxWidth: 640, margin: '0 auto' }}>
-        <motion.div variants={fadeUp}>
-          <span style={{ display: 'inline-block', background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.28)', color: '#818cf8', borderRadius: 999, padding: '5px 16px', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 24 }}>Get Started Today</span>
-        </motion.div>
-        <motion.h2 variants={fadeUp} style={{ fontSize: 'clamp(28px,5vw,58px)', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.04em', margin: '0 0 20px', color: '#e6edf3' }}>
-          Your yield.{' '}
-          <span style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Your rules.</span>
-        </motion.h2>
-        <motion.p variants={fadeUp} style={{ fontSize: 17, color: '#9ca3af', margin: '0 0 40px', lineHeight: 1.65 }}>
-          Join 1,420+ stakers already earning rewards. Non-custodial. Permissionless. Yours.
-        </motion.p>
-        <motion.div variants={fadeUp} style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Link to="/stake">
-            <TiltCard maxTilt={8} hoverScale={1.04}>
-              <motion.button whileHover={{ boxShadow: '0 0 44px rgba(99,102,241,0.55)' }} whileTap={{ scale: 0.97 }}
-                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 'none', borderRadius: 14, padding: '16px 40px', fontSize: 16, fontWeight: 800, cursor: 'pointer' }}>
-                Start Earning →
+    <>
+      <section
+        ref={ref}
+        className="landing-stack-layer landing-stack-z4 landing-section-pad"
+        style={{ textAlign: 'center', position: 'relative', overflow: 'hidden', background: 'var(--bg-primary)' }}
+      >
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 80% at 50% 50%,rgba(99,102,241,0.11) 0%,transparent 70%)', pointerEvents: 'none' }} />
+        <motion.div variants={stagger} initial="hidden" animate={inView ? 'show' : 'hidden'} style={{ position: 'relative', zIndex: 1, maxWidth: 640, margin: '0 auto' }}>
+          <motion.div variants={fadeUp}>
+            <span style={{ display: 'inline-block', background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.28)', color: '#818cf8', borderRadius: 999, padding: '5px 16px', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 24 }}>Get Started Today</span>
+          </motion.div>
+          <motion.h2 variants={fadeUp} style={{ fontSize: 'clamp(28px,5vw,58px)', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.04em', margin: '0 0 20px', color: '#e6edf3' }}>
+            Your yield.{' '}
+            <span style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Your rules.</span>
+          </motion.h2>
+          <motion.p variants={fadeUp} style={{ fontSize: 17, color: '#9ca3af', margin: '0 0 40px', lineHeight: 1.65 }}>
+            Join 1,420+ stakers already earning rewards. Non-custodial. Permissionless. Yours.
+          </motion.p>
+          <motion.div variants={fadeUp} className='mt-50' style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <Link to="/stake">
+              <TiltCard maxTilt={8} hoverScale={1.04}>
+                <motion.button whileHover={{ boxShadow: '0 0 44px rgba(99,102,241,0.55)' }} whileTap={{ scale: 0.97 }}
+                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 'none', borderRadius: 14, padding: '16px 40px', fontSize: 16, fontWeight: 800, cursor: 'pointer' }}>
+                  Start Earning →
+                </motion.button>
+              </TiltCard>
+            </Link>
+            <Link to="/swap">
+              <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+                style={{ background: 'var(--bg-secondary)', color: '#e6edf3', border: '1px solid var(--border)', borderRadius: 14, padding: '16px 40px', fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
+                Try Swapping
               </motion.button>
-            </TiltCard>
-          </Link>
-          <Link to="/swap">
-            <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
-              style={{ background: 'var(--bg-secondary)', color: '#e6edf3', border: '1px solid var(--border)', borderRadius: 14, padding: '16px 40px', fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
-              Try Swapping
-            </motion.button>
-          </Link>
+            </Link>
+          </motion.div>
         </motion.div>
-      </motion.div>
-    </section>
-  );
-}
-
-/* ─── Footer ─────────────────────────────────────────────────────────────── */
-function Footer() {
-  return (
-    <footer style={{ borderTop: '1px solid var(--border)', padding: '40px 32px', background: 'var(--bg-secondary)' }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#fff' }}>FS</div>
-          <span style={{ fontWeight: 800, fontSize: 15, color: '#f9fafb' }}>FLUX SWAP</span>
+      </section>
+      <footer
+        className="landing-footer-bar landing-footer-pad"
+        style={{
+          borderTop: '1px solid var(--border)',
+          background: 'var(--bg-secondary)',
+          display: 'flex',
+          alignItems: 'center',
+        }}
+      >
+        <div className="landing-footer-inner" style={{ width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#fff' }}>FS</div>
+            <span style={{ fontWeight: 800, fontSize: 15, color: '#f9fafb' }}>FLUX SWAP</span>
+          </div>
+          <div className="landing-footer-links">
+            {['Terms', 'Privacy', 'Security', 'Docs'].map(l => (
+              <a key={l} href="#" style={{ color: '#9ca3af', fontSize: 13, fontWeight: 500, textDecoration: 'none', transition: 'color 0.2s' }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#f9fafb')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#9ca3af')}>{l}</a>
+            ))}
+          </div>
+          <span style={{ fontSize: 12, color: '#4b5563' }}>© 2026 Flux Swap · The Digital Sanctuary</span>
         </div>
-        <div style={{ display: 'flex', gap: 28 }}>
-          {['Terms', 'Privacy', 'Security', 'Docs'].map(l => (
-            <a key={l} href="#" style={{ color: '#9ca3af', fontSize: 13, fontWeight: 500, textDecoration: 'none', transition: 'color 0.2s' }}
-              onMouseEnter={e => (e.currentTarget.style.color = '#f9fafb')}
-              onMouseLeave={e => (e.currentTarget.style.color = '#9ca3af')}>{l}</a>
-          ))}
-        </div>
-        <span style={{ fontSize: 12, color: '#4b5563' }}>© 2026 Flux Swap · The Digital Sanctuary</span>
-      </div>
-    </footer>
+      </footer>
+    </>
   );
 }
 
 /* ─── Page ───────────────────────────────────────────────────────────────── */
 export default function LandingPage() {
   return (
-    <div style={{ background: 'var(--bg-primary)', minHeight: '100vh', overflowX: 'hidden' }}>
+    <div className="landing-page-root" style={{ background: 'var(--bg-primary)', minHeight: '100vh' }}>
       <Nav />
       <Hero />
-      <LiveStats />
-      <Features />
-      <HowItWorks />
-      <CTABanner />
-      <Footer />
+      <FeaturesAndHow />
+      <CTAAndFooter />
     </div>
   );
 }
