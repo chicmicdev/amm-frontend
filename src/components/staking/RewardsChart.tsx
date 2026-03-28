@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { createChart, type IChartApi, AreaSeries } from 'lightweight-charts';
+import { createChart, type IChartApi, AreaSeries, type BusinessDay } from 'lightweight-charts';
 import { useAppKitAccount } from '@reown/appkit/react';
 import { getRewardsHistory } from '../../services/api/stakingService';
 
@@ -45,12 +45,17 @@ export default function RewardsChart() {
       },
       timeScale: {
         borderColor: 'rgba(31,41,55,0.4)',
-        tickMarkFormatter: (time: number | { year: number; month: number; day: number }) => {
-          if (typeof time === 'object') {
+        tickMarkFormatter: (time: BusinessDay | number | string) => {
+          if (typeof time === 'object' && time !== null) {
             return `${time.day}/${time.month}`;
           }
+          if (typeof time === 'string') {
+            const parts = time.split('-');
+            return `${parseInt(parts[2])}/${parseInt(parts[1])}`;
+          }
+          // UTCTimestamp: use UTC methods to avoid timezone shifts
           const d = new Date(time * 1000);
-          return `${d.getDate()}/${d.getMonth() + 1}`;
+          return `${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
         },
       },
       handleScroll: false,
@@ -69,7 +74,10 @@ export default function RewardsChart() {
     });
 
     areaSeries.setData(
-      history.map((p) => ({ time: p.time as `${number}-${number}-${number}`, value: p.value }))
+      history.map((p) => {
+        const [year, month, day] = (p.time as string).split('-').map(Number);
+        return { time: { year, month, day } as BusinessDay, value: p.value };
+      })
     );
 
     chart.timeScale().fitContent();

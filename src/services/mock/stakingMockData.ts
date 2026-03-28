@@ -20,12 +20,13 @@ export const mockUserPosition: UserPosition = {
 };
 
 // 30 days of progressively growing rewards (Mar 1 – Mar 30 2026)
+// Using UTC methods to avoid timezone-shift bugs (e.g. new Date('2026-03-01') is
+// UTC midnight, so local getDate()/getMonth() roll back a day in UTC− timezones).
 export const mockRewardsHistory: RewardDataPoint[] = Array.from({ length: 30 }, (_, i) => {
-  const date = new Date('2026-03-01');
-  date.setDate(date.getDate() + i);
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
+  const date = new Date(Date.UTC(2026, 2, 1 + i)); // month is 0-indexed
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(date.getUTCDate()).padStart(2, '0');
   return {
     time: `${yyyy}-${mm}-${dd}`,
     value: parseFloat(((62.45 / 29) * i).toFixed(4)),
