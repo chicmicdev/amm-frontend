@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import TiltCard from '../components/common/TiltCard';
 import { useAppKitAccount, useAppKit } from '@reown/appkit/react';
 import TokenInput from '../components/common/TokenInput';
 import SlippageSettings from '../components/swap/SlippageSettings';
@@ -138,7 +137,6 @@ export default function SwapPage() {
       </motion.div>
 
       {/* ── 1. Card entrance with spring ── */}
-      <TiltCard maxTilt={7}>
       <motion.div
         className="card glow"
         style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
@@ -296,7 +294,6 @@ export default function SwapPage() {
           )}
         </AnimatePresence>
       </motion.div>
-      </TiltCard>
     </div>
   );
 }
