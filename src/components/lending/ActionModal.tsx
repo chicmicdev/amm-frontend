@@ -1,16 +1,27 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { formatUnits } from 'viem';
+import { formatUnits, parseUnits } from 'viem';
 import toast from 'react-hot-toast';
 import {
-  fetchATokenBalance, fetchUserAccountData,
-  baseSepoliaClient, type ReserveInfo,
+  fetchATokenBalance,
+  fetchDebtTokenBalance,
+  fetchUserAccountData,
+  baseSepoliaClient,
+  type ReserveInfo,
+  type UserAccountData,
 } from '../../services/lending/lendingService';
 import { ERC20_ABI } from '../../contracts/lendingAbis';
 import { useLendingActions } from '../../hooks/useLendingActions';
 import { TokenIcon } from './TokenIcon';
-import { Btn } from './Btn';
 import { fmt, hfColor } from './lendingUtils';
+import {
+  clampAmountStringToMax,
+  formatWeiForAmountInput,
+  maxBorrowWei,
+  maxRepayWei,
+  maxWithdrawWei,
+  safeParseUnitsDecimal,
+} from './lendingMaxAmounts';
 import type { ActionMode } from './lendingTypes';
 import { MODE_CFG } from './lendingTypes';
 
@@ -23,46 +34,140 @@ interface ActionModalProps {
 }
 
 export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: ActionModalProps) {
-  const [amount, setAmount]     = useState('');
-  const [walletBal, setWalletBal] = useState('—');
-  const [aBal, setABal]         = useState('—');
-  const [hf, setHf]             = useState('—');
-  const [riskAck, setRiskAck]   = useState(false);
+  const [amount, setAmount]       = useState('');
+  const [walletWei, setWalletWei] = useState<bigint | null>(null);
+  const [aTokenWei, setATokenWei] = useState<bigint | null>(null);
+  const [debtWei, setDebtWei]     = useState<bigint | null>(null);
+  const [userAccount, setUserAccount] = useState<UserAccountData | null>(null);
+  const [balancesError, setBalancesError] = useState(false);
+  const [riskAck, setRiskAck]     = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { supply, borrow, repay, withdraw, status, error, reset } = useLendingActions();
   const isPending = status === 'approving' || status === 'pending';
   const cfg = MODE_CFG[mode];
+  const dec = reserve.decimals;
 
   useEffect(() => {
     if (!userAddress) return;
     const addr = userAddress as `0x${string}`;
-    baseSepoliaClient
-      .readContract({ address: reserve.asset, abi: ERC20_ABI, functionName: 'balanceOf', args: [addr] })
-      .then(b => setWalletBal(parseFloat(formatUnits(b as bigint, reserve.decimals)).toFixed(4)))
-      .catch(() => setWalletBal('—'));
-    fetchATokenBalance(reserve.aTokenAddress, addr, reserve.decimals)
-      .then(b => setABal(parseFloat(b).toFixed(4)))
-      .catch(() => setABal('—'));
-    fetchUserAccountData(addr)
-      .then(d => setHf(d.healthFactor))
-      .catch(() => setHf('—'));
-  }, [reserve, userAddress]);
+    let cancelled = false;
+    setBalancesError(false);
+    void (async () => {
+      try {
+        const [wRaw, aStr, dStr, uData] = await Promise.all([
+          baseSepoliaClient.readContract({
+            address: reserve.asset,
+            abi: ERC20_ABI,
+            functionName: 'balanceOf',
+            args: [addr],
+          }) as Promise<bigint>,
+          fetchATokenBalance(reserve.aTokenAddress, addr, reserve.decimals),
+          fetchDebtTokenBalance(reserve.variableDebtTokenAddress, addr, reserve.decimals),
+          fetchUserAccountData(addr),
+        ]);
+        if (cancelled) return;
+        setWalletWei(wRaw);
+        setATokenWei(safeParseUnitsDecimal(aStr, dec));
+        setDebtWei(safeParseUnitsDecimal(dStr, dec));
+        setUserAccount(uData);
+      } catch {
+        if (!cancelled) setBalancesError(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [reserve, userAddress, dec]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  const maxVal    = mode === 'repay' || mode === 'withdraw' ? aBal : walletBal;
-  const amtNum    = parseFloat(amount || '0');
-  const showRisk  = mode === 'borrow' && amtNum > 0;
-  const canSubmit = !isPending && amtNum > 0 && !(showRisk && !riskAck);
+  useEffect(() => {
+    setAmount('');
+    setRiskAck(false);
+  }, [reserve.asset, mode]);
+
+  const maxWei = useMemo(() => {
+    const poolLiq = safeParseUnitsDecimal(reserve.availableLiquidity, dec);
+    switch (mode) {
+      case 'supply':
+        if (walletWei === null) return null;
+        return walletWei;
+      case 'withdraw': {
+        if (aTokenWei === null) return null;
+        return maxWithdrawWei(aTokenWei, poolLiq);
+      }
+      case 'borrow':
+        return maxBorrowWei(reserve, userAccount);
+      case 'repay': {
+        if (walletWei === null || debtWei === null) return null;
+        return maxRepayWei(walletWei, debtWei);
+      }
+      default:
+        return null;
+    }
+  }, [mode, reserve, userAccount, walletWei, aTokenWei, debtWei, dec]);
+
+  const hf = userAccount?.healthFactor ?? '—';
+
+  const amtWeiParsed = useMemo(() => {
+    const t = amount.trim();
+    if (!t) return 0n;
+    try {
+      return parseUnits(t as `${number}`, dec);
+    } catch {
+      return null;
+    }
+  }, [amount, dec]);
+
+  const amtNum = parseFloat(amount || '0');
+  const showRisk = mode === 'borrow' && amtNum > 0;
+  const withinMax =
+    maxWei !== null &&
+    amtWeiParsed !== null &&
+    amtWeiParsed <= maxWei;
+  const canSubmit =
+    !isPending &&
+    !balancesError &&
+    maxWei !== null &&
+    maxWei > 0n &&
+    amtWeiParsed !== null &&
+    amtWeiParsed > 0n &&
+    withinMax &&
+    !(showRisk && !riskAck);
+
+  const maxLabel =
+    mode === 'supply'
+      ? 'Wallet'
+      : mode === 'withdraw'
+        ? 'Max withdraw'
+        : mode === 'borrow'
+          ? 'Available to borrow'
+          : 'Max repay';
+
+  const handleAmountChange = (raw: string) => {
+    if (maxWei === null || maxWei <= 0n) {
+      setAmount(raw.replace(/[^0-9.]/g, ''));
+      return;
+    }
+    setAmount(clampAmountStringToMax(raw, maxWei, dec));
+  };
+
+  const setMaxAmount = () => {
+    if (maxWei === null || maxWei <= 0n) return;
+    setAmount(formatWeiForAmountInput(maxWei, dec));
+  };
 
   const handleSubmit = async () => {
-    if (!amount || amtNum <= 0) return;
+    if (!canSubmit || amtWeiParsed === null || amtWeiParsed <= 0n) return;
+    if (maxWei !== null && amtWeiParsed > maxWei) {
+      toast.error('Amount exceeds the maximum allowed for this action.');
+      return;
+    }
     const asset = reserve.asset as `0x${string}`;
-    if (mode === 'supply')   await supply(asset, amount, reserve.decimals);
-    if (mode === 'borrow')   await borrow(asset, amount, reserve.decimals);
-    if (mode === 'repay')    await repay(asset, amount, reserve.decimals);
-    if (mode === 'withdraw') await withdraw(asset, amount, reserve.decimals);
+    const normalized = formatUnits(amtWeiParsed, dec);
+    if (mode === 'supply')   await supply(asset, normalized, dec);
+    if (mode === 'borrow')   await borrow(asset, normalized, dec);
+    if (mode === 'repay')    await repay(asset, normalized, dec);
+    if (mode === 'withdraw') await withdraw(asset, normalized, dec);
   };
 
   const addToWallet = async () => {
@@ -177,17 +282,38 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Amount</span>
               <button
-                onClick={() => setAmount(maxVal === '—' ? '' : maxVal)}
+                type="button"
+                onClick={setMaxAmount}
+                disabled={maxWei === null || maxWei <= 0n}
                 style={{
                   background: 'rgba(99,102,241,0.12)', color: 'var(--color-accent-light)',
                   border: 'none', borderRadius: 6, padding: '3px 10px',
-                  fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  fontSize: 12, fontWeight: 600, cursor: maxWei !== null && maxWei > 0n ? 'pointer' : 'not-allowed',
+                  opacity: maxWei !== null && maxWei > 0n ? 1 : 0.45,
                 }}
               >
-                {mode === 'repay' || mode === 'withdraw' ? 'Supplied' : 'Wallet'}:{' '}
-                {maxVal === '—' ? '—' : fmt(parseFloat(maxVal), 4)} MAX
+                {maxLabel}:{' '}
+                {maxWei === null || maxWei <= 0n
+                  ? '—'
+                  : `${formatWeiForAmountInput(maxWei, dec)} MAX`}
               </button>
             </div>
+
+            {maxWei !== null && maxWei > 0n && (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                Maximum {formatWeiForAmountInput(maxWei, dec)} {reserve.symbol} (pool + your position limits)
+              </div>
+            )}
+            {maxWei !== null && maxWei <= 0n && (
+              <div style={{ fontSize: 12, color: '#F89F1A', marginBottom: 8 }}>
+                Nothing available for this action right now.
+              </div>
+            )}
+            {balancesError && (
+              <div style={{ fontSize: 12, color: '#F44336', marginBottom: 8 }}>
+                Could not load balances. Try again or check your connection.
+              </div>
+            )}
 
             <div style={{
               background: 'var(--bg-secondary)', border: '1px solid var(--border)',
@@ -197,8 +323,11 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
               <input
                 ref={inputRef}
                 value={amount}
-                onChange={e => setAmount(e.target.value)}
-                placeholder="0.00" type="number" min="0"
+                onChange={e => handleAmountChange(e.target.value)}
+                placeholder="0.00"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
                 style={{
                   flex: 1, background: 'none', border: 'none', outline: 'none',
                   color: 'var(--text-primary)', fontSize: 24, fontWeight: 700, padding: '10px 0',
