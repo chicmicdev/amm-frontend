@@ -95,12 +95,22 @@ async function ownedPositionTokenIds(user: Address): Promise<bigint[]> {
   const pc = getPublicClient(config, { chainId: CHAIN_ID });
   if (!pc) return [];
 
-  const logs = await pc.getLogs({
-    address: CONTRACTS.NonfungiblePositionManager as Address,
-    event: transferEvent,
-    fromBlock: 0n,
-    toBlock: "latest",
-  });
+  const MAX_BLOCK_RANGE = 9_000n;
+  const latest = await pc.getBlockNumber();
+  const logs: Awaited<ReturnType<typeof pc.getLogs>> = [];
+
+  for (let to = latest; ; ) {
+    const from = to > MAX_BLOCK_RANGE ? to - MAX_BLOCK_RANGE : 0n;
+    const chunk = await pc.getLogs({
+      address: CONTRACTS.NonfungiblePositionManager as Address,
+      event: transferEvent,
+      fromBlock: from,
+      toBlock: to,
+    });
+    logs.push(...chunk);
+    if (from === 0n) break;
+    to = from - 1n;
+  }
 
   logs.sort((a, b) => {
     const bn = Number(a.blockNumber - b.blockNumber);

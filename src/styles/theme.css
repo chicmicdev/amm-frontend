@@ -20,8 +20,10 @@
 
   /* ── Typography ──────────────────────────────────────────────────────────── */
   --text-primary:   #e6edf3;
-  --text-secondary: #9ca3af;
-  --text-muted:     #4b5563;
+  /* Supporting UI copy — lifted for contrast on dark surfaces */
+  --text-secondary: #b4bcc8;
+  /* Hints / captions — still de-emphasized vs secondary, but readable (was #4b5563) */
+  --text-muted:     #8d96a3;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   /* ── Brand / Accent ──────────────────────────────────────────────────────── */

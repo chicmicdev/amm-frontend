@@ -1,7 +1,7 @@
 import { defineChain } from 'viem';
 import { createAppKit } from '@reown/appkit/react';
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi';
-import { polygonAmoy, sepolia, hardhat } from '@reown/appkit/networks';
+import { polygonAmoy, sepolia, hardhat, baseSepolia } from '@reown/appkit/networks';
 import type { AppKitNetwork } from '@reown/appkit/networks';
 
 export const projectId = 'a1f319ce3901f51cf8c063f7fbe74b6a';
@@ -19,7 +19,7 @@ const amoyNetwork: AppKitNetwork = amoyRpcOverride
   : polygonAmoy;
 
 /** Amoy first so the wallet modal defaults to the chain your contracts use. */
-export const networks: [AppKitNetwork, ...AppKitNetwork[]] = [amoyNetwork, sepolia, hardhat];
+export const networks: [AppKitNetwork, ...AppKitNetwork[]] = [amoyNetwork, baseSepolia, sepolia, hardhat];
 
 export const wagmiAdapter = new WagmiAdapter({
   networks,

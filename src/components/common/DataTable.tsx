@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import toast from 'react-hot-toast';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -7,9 +8,24 @@ export type ColumnType = 'text' | 'number' | 'date' | 'badge' | 'status' | 'hash
 
 export interface ColumnConfig {
   key: string;
+  /** Plain label (sort / search / fallback) */
   label: string;
+  /** Optional rich header (e.g. tooltips). When set, shown instead of `label` in the table head. */
+  labelNode?: ReactNode;
   type: ColumnType;
   sortable?: boolean;
+  /**
+   * When `bare` is true, grid column track (e.g. `1.5fr`, `minmax(0,2fr)`).
+   * Defaults to `1fr` per column.
+   */
+  gridTrack?: string;
+  /** Cell horizontal alignment (bare / lending tables) */
+  align?: 'left' | 'right' | 'center';
+  /**
+   * Keep header text and cell content on one line (buttons, long headers).
+   * Pair action columns with `gridTrack: 'minmax(…px, auto)'` so the grid track does not shrink below buttons.
+   */
+  noWrap?: boolean;
   /** For 'badge' type: map value → CSS class suffix (e.g. { STAKE: 'stake', CLAIM: 'claim' }) */
   badgeMap?: Record<string, string>;
   /** Custom cell renderer — overrides type-based rendering */
@@ -32,6 +48,11 @@ export interface TableEvents {
 interface DataTableProps extends TableEvents {
   columns: ColumnConfig[];
   data: Record<string, unknown>[];
+  /**
+   * Embedded table only: no outer `stake-card`, no title/search/filters, no pagination.
+   * Use inside cards (e.g. lending markets). Set `pageSize` high or rely on no pagination when all rows fit.
+   */
+  bare?: boolean;
   loading?: boolean;
   pageSize?: number;
   title?: string;
@@ -136,6 +157,7 @@ function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
 export default function DataTable({
   columns,
   data,
+  bare = false,
   loading = false,
   pageSize = 5,
   title,
@@ -196,7 +218,16 @@ export default function DataTable({
     serverPaginated && typeof totalRowCount === 'number' ? totalRowCount : sorted.length;
 
   const totalPages = Math.max(1, Math.ceil(effectiveTotal / pageSize));
-  const paginated = serverPaginated ? sorted : sorted.slice((page - 1) * pageSize, page * pageSize);
+  const paginated = bare
+    ? sorted
+    : serverPaginated
+      ? sorted
+      : sorted.slice((page - 1) * pageSize, page * pageSize);
+
+  const gridCols = columns.map(c => c.gridTrack ?? '1fr').join(' ');
+  const headPad = bare ? '10px 20px' : '8px 24px';
+  const rowPad  = bare ? '14px 20px' : '14px 24px';
+  const rowMargin = bare ? '0' : '0 8px';
 
   const handleSort = (key: string) => {
     const newDir = sortKey === key && sortDir === 'asc' ? 'desc' : 'asc';
@@ -229,6 +260,203 @@ export default function DataTable({
 
   const showFrom = effectiveTotal === 0 ? 0 : (page - 1) * pageSize + 1;
   const showTo = Math.min(page * pageSize, effectiveTotal);
+
+  const tableSection = (
+    <>
+      {/* ── Table ── */}
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' } as object}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: bare ? 480 : 520 }}>
+          {/* Head */}
+          <thead>
+            <tr style={{
+              display: 'grid',
+              gridTemplateColumns: gridCols,
+              padding: headPad,
+              fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+              letterSpacing: bare ? '0.06em' : '0.07em',
+              color: 'var(--text-secondary)',
+              borderBottom: bare ? '1px solid var(--border)' : undefined,
+            }}>
+              {columns.map(col => (
+                <th
+                  key={col.key}
+                  style={{
+                    textAlign: col.align === 'right' ? 'right' : col.align === 'center' ? 'center' : 'left',
+                    fontWeight: 700, padding: 0,
+                    cursor: col.sortable && !bare ? 'pointer' : 'default',
+                    userSelect: 'none',
+                    display: 'flex', alignItems: 'center',
+                    justifyContent: col.align === 'right' ? 'flex-end' : col.align === 'center' ? 'center' : 'flex-start',
+                    transition: 'color 0.15s',
+                    color: sortKey === col.key ? 'var(--text-primary)' : undefined,
+                    whiteSpace: col.noWrap ? 'nowrap' : undefined,
+                    minWidth: col.noWrap ? 'min-content' : undefined,
+                  }}
+                  onClick={() => !bare && col.sortable && handleSort(col.key)}
+                >
+                  {col.labelNode ?? col.label}
+                  {col.sortable && !bare && (
+                    <SortIcon active={sortKey === col.key} dir={sortKey === col.key ? sortDir : 'asc'} />
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+
+          {/* Divider (non-bare only — bare uses thead border) */}
+          {!bare && (
+            <tbody>
+              <tr><td colSpan={columns.length} style={{ padding: 0 }}>
+                <div style={{ borderTop: '1px solid rgba(31,41,55,0.4)', margin: '0 24px' }} />
+              </td></tr>
+            </tbody>
+          )}
+
+          <tbody>
+            {loading ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <tr key={i}><td colSpan={columns.length} style={{ padding: bare ? '12px 20px' : '12px 24px' }}>
+                  <div className="skeleton" style={{ height: 14, width: '100%' }} />
+                </td></tr>
+              ))
+            ) : paginated.length === 0 ? (
+              <tr><td colSpan={columns.length}>
+                <div style={{ textAlign: 'center', padding: bare ? '28px 20px' : '40px', color: 'var(--text-secondary)' }}>
+                  {!bare && <div style={{ fontSize: 32, marginBottom: 8 }}>{emptyIcon}</div>}
+                  <div style={{ fontSize: bare ? 13 : 14 }}>{emptyText}</div>
+                </div>
+              </td></tr>
+            ) : (
+              paginated.map((row, i) => (
+                <tr
+                  key={
+                    String(
+                      (row._rowKey ?? row.poolAddress ?? row.id ?? i) as string | number,
+                    )
+                  }
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: gridCols,
+                    padding: rowPad,
+                    fontSize: 13,
+                    background: bare
+                      ? 'transparent'
+                      : (i % 2 === 0 ? 'rgba(17,24,39,0.3)' : 'transparent'),
+                    transition: 'background 0.15s',
+                    margin: rowMargin,
+                    borderRadius: bare ? 0 : 8,
+                    borderBottom: bare ? '1px solid var(--border)' : undefined,
+                  }}
+                  onMouseEnter={bare ? undefined : e => ((e.currentTarget as HTMLElement).style.background = 'rgba(31,41,55,0.5)')}
+                  onMouseLeave={bare ? undefined : e => ((e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? 'rgba(17,24,39,0.3)' : 'transparent')}
+                >
+                  {columns.map(col => (
+                    <td
+                      key={col.key}
+                      style={{
+                        padding: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: col.align === 'right' ? 'flex-end' : col.align === 'center' ? 'center' : 'flex-start',
+                        flexWrap: col.noWrap ? 'nowrap' : undefined,
+                        whiteSpace: col.noWrap ? 'nowrap' : undefined,
+                        minWidth: col.noWrap ? 'min-content' : undefined,
+                      }}
+                    >
+                      <Cell col={col} value={row[col.key]} row={row} />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Pagination ── */}
+      {!bare && effectiveTotal > pageSize && (
+        <div style={{
+          padding: '16px 24px 0',
+          borderTop: '1px solid rgba(31,41,55,0.4)',
+          marginTop: 8,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          flexWrap: 'wrap', gap: 8,
+          fontSize: 13, color: 'var(--text-secondary)',
+        }}>
+          <span>Showing {showFrom}–{showTo} of {effectiveTotal}</span>
+
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button
+              className="btn-outline-stake"
+              style={{ padding: '5px 12px', fontSize: 12 }}
+              onClick={() => handlePage(1)}
+              disabled={page === 1}
+            >
+              «
+            </button>
+            <button
+              className="btn-outline-stake"
+              style={{ padding: '5px 14px', fontSize: 12 }}
+              onClick={() => handlePage(Math.max(1, page - 1))}
+              disabled={page === 1}
+            >
+              ← Prev
+            </button>
+
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+              .reduce<(number | '...')[]>((acc, p, idx, arr) => {
+                if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push('...');
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, idx) =>
+                p === '...' ? (
+                  <span key={`ellipsis-${idx}`} style={{ padding: '0 4px', color: 'var(--text-muted)' }}>…</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => handlePage(p as number)}
+                    style={{
+                      padding: '5px 10px', fontSize: 12, borderRadius: 8, cursor: 'pointer',
+                      border: '1px solid',
+                      background: page === p ? 'linear-gradient(135deg, var(--stake-indigo), var(--stake-violet))' : 'transparent',
+                      borderColor: page === p ? 'transparent' : 'var(--stake-border)',
+                      color: page === p ? 'white' : 'var(--text-secondary)',
+                      minWidth: 32, fontWeight: page === p ? 700 : 400,
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {p}
+                  </button>
+                )
+              )}
+
+            <button
+              className="btn-outline-stake"
+              style={{ padding: '5px 14px', fontSize: 12 }}
+              onClick={() => handlePage(Math.min(totalPages, page + 1))}
+              disabled={page === totalPages}
+            >
+              Next →
+            </button>
+            <button
+              className="btn-outline-stake"
+              style={{ padding: '5px 12px', fontSize: 12 }}
+              onClick={() => handlePage(totalPages)}
+              disabled={page === totalPages}
+            >
+              »
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
+  if (bare) {
+    return <div style={{ width: '100%' }}>{tableSection}</div>;
+  }
 
   return (
     <div className="stake-card" style={{ padding: '24px 0', overflow: 'hidden' }}>
@@ -302,172 +530,7 @@ export default function DataTable({
         </div>
       </div>
 
-      {/* ── Table ── */}
-      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' } as object}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
-          {/* Head */}
-          <thead>
-            <tr style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${columns.length}, 1fr)`,
-              padding: '8px 24px',
-              fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
-              letterSpacing: '0.07em', color: 'var(--text-secondary)',
-            }}>
-              {columns.map(col => (
-                <th
-                  key={col.key}
-                  style={{
-                    textAlign: 'left', fontWeight: 700, padding: 0,
-                    cursor: col.sortable ? 'pointer' : 'default',
-                    userSelect: 'none',
-                    display: 'flex', alignItems: 'center',
-                    transition: 'color 0.15s',
-                    color: sortKey === col.key ? 'var(--text-primary)' : undefined,
-                  }}
-                  onClick={() => col.sortable && handleSort(col.key)}
-                >
-                  {col.label}
-                  {col.sortable && (
-                    <SortIcon active={sortKey === col.key} dir={sortKey === col.key ? sortDir : 'asc'} />
-                  )}
-                </th>
-              ))}
-            </tr>
-          </thead>
-
-          {/* Divider */}
-          <tbody>
-            <tr><td colSpan={columns.length} style={{ padding: 0 }}>
-              <div style={{ borderTop: '1px solid rgba(31,41,55,0.4)', margin: '0 24px' }} />
-            </td></tr>
-
-            {/* Rows */}
-            {loading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <tr key={i}><td colSpan={columns.length} style={{ padding: '12px 24px' }}>
-                  <div className="skeleton" style={{ height: 14, width: '100%' }} />
-                </td></tr>
-              ))
-            ) : paginated.length === 0 ? (
-              <tr><td colSpan={columns.length}>
-                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                  <div style={{ fontSize: 32, marginBottom: 8 }}>{emptyIcon}</div>
-                  <div style={{ fontSize: 14 }}>{emptyText}</div>
-                </div>
-              </td></tr>
-            ) : (
-              paginated.map((row, i) => (
-                <tr
-                  key={
-                    String(
-                      (row._rowKey ?? row.poolAddress ?? row.id ?? i) as string | number,
-                    )
-                  }
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: `repeat(${columns.length}, 1fr)`,
-                    padding: '14px 24px',
-                    fontSize: 13,
-                    background: i % 2 === 0 ? 'rgba(17,24,39,0.3)' : 'transparent',
-                    transition: 'background 0.15s',
-                    margin: '0 8px',
-                    borderRadius: 8,
-                  }}
-                  onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = 'rgba(31,41,55,0.5)')}
-                  onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? 'rgba(17,24,39,0.3)' : 'transparent')}
-                >
-                  {columns.map(col => (
-                    <td key={col.key} style={{ padding: 0, display: 'flex', alignItems: 'center' }}>
-                      <Cell col={col} value={row[col.key]} row={row} />
-                    </td>
-                  ))}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* ── Pagination ── */}
-      {effectiveTotal > pageSize && (
-        <div style={{
-          padding: '16px 24px 0',
-          borderTop: '1px solid rgba(31,41,55,0.4)',
-          marginTop: 8,
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          flexWrap: 'wrap', gap: 8,
-          fontSize: 13, color: 'var(--text-secondary)',
-        }}>
-          <span>Showing {showFrom}–{showTo} of {effectiveTotal}</span>
-
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <button
-              className="btn-outline-stake"
-              style={{ padding: '5px 12px', fontSize: 12 }}
-              onClick={() => handlePage(1)}
-              disabled={page === 1}
-            >
-              «
-            </button>
-            <button
-              className="btn-outline-stake"
-              style={{ padding: '5px 14px', fontSize: 12 }}
-              onClick={() => handlePage(Math.max(1, page - 1))}
-              disabled={page === 1}
-            >
-              ← Prev
-            </button>
-
-            {/* Page numbers */}
-            {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
-              .reduce<(number | '...')[]>((acc, p, idx, arr) => {
-                if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push('...');
-                acc.push(p);
-                return acc;
-              }, [])
-              .map((p, idx) =>
-                p === '...' ? (
-                  <span key={`ellipsis-${idx}`} style={{ padding: '0 4px', color: 'var(--text-muted)' }}>…</span>
-                ) : (
-                  <button
-                    key={p}
-                    onClick={() => handlePage(p as number)}
-                    style={{
-                      padding: '5px 10px', fontSize: 12, borderRadius: 8, cursor: 'pointer',
-                      border: '1px solid',
-                      background: page === p ? 'linear-gradient(135deg, var(--stake-indigo), var(--stake-violet))' : 'transparent',
-                      borderColor: page === p ? 'transparent' : 'var(--stake-border)',
-                      color: page === p ? 'white' : 'var(--text-secondary)',
-                      minWidth: 32, fontWeight: page === p ? 700 : 400,
-                      transition: 'all 0.15s',
-                    }}
-                  >
-                    {p}
-                  </button>
-                )
-              )}
-
-            <button
-              className="btn-outline-stake"
-              style={{ padding: '5px 14px', fontSize: 12 }}
-              onClick={() => handlePage(Math.min(totalPages, page + 1))}
-              disabled={page === totalPages}
-            >
-              Next →
-            </button>
-            <button
-              className="btn-outline-stake"
-              style={{ padding: '5px 12px', fontSize: 12 }}
-              onClick={() => handlePage(totalPages)}
-              disabled={page === totalPages}
-            >
-              »
-            </button>
-          </div>
-        </div>
-      )}
+      {tableSection}
     </div>
   );
 }

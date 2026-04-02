@@ -9,6 +9,7 @@ const navLinks = [
   { to: '/swap',      label: 'Swap'      },
   { to: '/pool',      label: 'Pool'      },
   { to: '/positions', label: 'Positions' },
+  { to: '/lend',      label: 'Lend'      },
 ];
 
 export default function Header() {

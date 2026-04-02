@@ -5,6 +5,7 @@ import PoolPage from './pages/PoolPage';
 import PositionsPage from './pages/PositionsPage';
 import StakingPage from './pages/StakingPage';
 import LandingPage from './pages/LandingPage';
+import LendingPage from './pages/LendingPage';
 
 export default function App() {
   return (
@@ -15,10 +16,11 @@ export default function App() {
 
           {/* App routes — use shared Layout with Header */}
           <Route element={<Layout />}>
-            <Route path="/stake" element={<StakingPage />} />
-            <Route path="/swap" element={<SwapPage />} />
-            <Route path="/pool" element={<PoolPage />} />
+            <Route path="/stake"     element={<StakingPage />} />
+            <Route path="/swap"      element={<SwapPage />} />
+            <Route path="/pool"      element={<PoolPage />} />
             <Route path="/positions" element={<PositionsPage />} />
+            <Route path="/lend"      element={<LendingPage />} />
           </Route>
 
           {/* Wildcard → landing page (no Layout/Header) */}
