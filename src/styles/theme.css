@@ -1,0 +1,82 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Flux Swap — Design Tokens
+   Single source of truth for every color, radius, and shadow in the app.
+   Import this file before all other stylesheets.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+
+  /* ── Backgrounds ─────────────────────────────────────────────────────────── */
+  --bg-primary:    #0a0e1a;          /* page background                        */
+  --bg-secondary:  #111827;          /* subtle surface (inputs, tabs, rows)    */
+  --bg-card:       #161e2e;          /* card / panel surface                   */
+  --bg-input:      #0d111f;          /* form input background                  */
+  --bg-overlay:    rgba(0,0,0,0.65); /* modal / drawer backdrop                */
+
+  /* ── Borders ─────────────────────────────────────────────────────────────── */
+  --border:        rgba(55, 65, 100, 0.45);   /* default border                */
+  --border-subtle: rgba(31, 41, 80,  0.30);   /* very faint dividers           */
+  --border-hover:  var(--color-accent);        /* interactive hover border      */
+
+  /* ── Typography ──────────────────────────────────────────────────────────── */
+  --text-primary:   #e6edf3;
+  --text-secondary: #9ca3af;
+  --text-muted:     #4b5563;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* ── Brand / Accent ──────────────────────────────────────────────────────── */
+  --color-accent:        #6366f1;                /* indigo — primary brand     */
+  --color-accent-light:  #818cf8;                /* lighter indigo             */
+  --color-accent-dim:    rgba(99, 102, 241, 0.15);
+  --color-accent-border: rgba(99, 102, 241, 0.30);
+  --color-accent-alt:    #8b5cf6;                /* violet — secondary brand   */
+  --gradient-brand: linear-gradient(135deg, #6366f1, #8b5cf6);
+
+  /* ── Semantic — Success ──────────────────────────────────────────────────── */
+  --color-success:        #10b981;
+  --color-success-dim:    rgba(16, 185, 129, 0.15);
+  --color-success-border: rgba(16, 185, 129, 0.30);
+
+  /* ── Semantic — Danger ───────────────────────────────────────────────────── */
+  --color-danger:        #f85149;
+  --color-danger-dim:    rgba(248, 81, 73, 0.15);
+  --color-danger-border: rgba(248, 81, 73, 0.30);
+
+  /* ── Semantic — Warning ──────────────────────────────────────────────────── */
+  --color-warning:        #f59e0b;
+  --color-warning-dim:    rgba(245, 158, 11, 0.15);
+  --color-warning-border: rgba(245, 158, 11, 0.30);
+
+  /* ── Border Radius ───────────────────────────────────────────────────────── */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* ── Shadows ─────────────────────────────────────────────────────────────── */
+  --shadow-card:  0 4px 24px rgba(0,0,0,0.35);
+  --shadow-glow:  0 0 32px rgba(99,102,241,0.18);
+
+  /* ══════════════════════════════════════════════════════════════════════════
+     Legacy aliases — keep existing component code working without changes.
+     These map old variable names → unified tokens above.
+     ══════════════════════════════════════════════════════════════════════════ */
+
+  /* old accent aliases */
+  --accent-primary:   var(--color-accent);
+  --accent-secondary: var(--color-success);
+  --accent-danger:    var(--color-danger);
+  --accent-warning:   var(--color-warning);
+  --accent-purple:    var(--color-accent-alt);
+  --gradient-start:   #6366f1;
+  --gradient-end:     #8b5cf6;
+
+  /* old staking aliases */
+  --stake-bg:     var(--bg-primary);
+  --stake-card:   var(--bg-card);
+  --stake-border: var(--border);
+  --stake-indigo: var(--color-accent);
+  --stake-violet: var(--color-accent-alt);
+  --stake-green:  var(--color-success);
+  --stake-amber:  var(--color-warning);
+}
