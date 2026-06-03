@@ -1,0 +1,1174 @@
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import DataTable from '../components/common/DataTable';
+import type { ColumnConfig } from '../components/common/DataTable';
+import { useAppKitAccount } from '@reown/appkit/react';
+import { useAppKit } from '@reown/appkit/react';
+import TokenInput from '../components/common/TokenInput';
+import ScrollReveal from '../components/common/ScrollReveal';
+import type { Token, Pool, PoolStats } from '../types';
+import { useTokens } from '../context/TokensContext';
+import { FEE_TIERS, CONTRACT_ERRORS } from '../config/contracts';
+import { listPoolsFromIndex } from '../services/api/poolsListApi';
+import {
+  ensurePoolCreatedAndInitialized,
+  getPool,
+  getPoolStats,
+  getTokenBalance,
+} from '../services/api/poolService';
+import { humanPriceToken1PerToken0ToSqrtPriceX96 } from '../utils/liquidityAmounts';
+import { addLiquidity } from '../services/api/positionService';
+import { useToast } from '../context/ToastContext';
+import { formatCompactUSD, formatNumber, shortenTxHash } from '../utils/formatUtils';
+import { recordTxHistory } from '../services/history/txHistoryStorage';
+import { getTickRange, maxRangeTicksForSpacing } from '../utils/tickUtils';
+
+
+// ─── spring variants ────────────────────────────────────────────────────────
+const cardSpring = {
+  initial: { opacity: 0, scale: 0.95, y: 16 },
+  animate: { opacity: 1, scale: 1, y: 0 },
+  whileInView: { opacity: 1, scale: 1, y: 0 },
+  viewport: { once: true, margin: '-40px' },
+  transition: { type: 'spring' as const, stiffness: 300, damping: 20 },
+};
+
+function resolveError(err: unknown): string {
+  const msg = (err as { reason?: string; message?: string })?.reason
+    || (err as { message?: string })?.message || 'Transaction failed';
+  for (const [code, friendly] of Object.entries(CONTRACT_ERRORS)) {
+    if (msg.includes(code)) return friendly;
+  }
+  return msg;
+}
+
+const POOLS_INDEX_PAGE_SIZE = 10;
+
+function symbolForAddress(addr: string, registry: Token[]): string {
+  const hit = registry.find(t => t.address.toLowerCase() === addr.toLowerCase());
+  return hit?.symbol ?? `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+}
+
+function colorForAddress(addr: string, registry: Token[]): string | undefined {
+  return registry.find(t => t.address.toLowerCase() === addr.toLowerCase())?.logoColor;
+}
+
+function feeBpsLabel(bps: number): string {
+  const tier = FEE_TIERS.find(f => f.fee === bps);
+  return tier?.label ?? `${bps / 10_000}%`;
+}
+
+/** Enough fractional digits so small spot prices (e.g. WETH per USDC) do not collapse to 0.0000. */
+function decimalsForSpotRange(spot: number): number {
+  if (!Number.isFinite(spot) || spot <= 0) return 8;
+  const log10 = Math.log10(spot);
+  if (log10 >= -2) return 4;
+  if (log10 >= -6) return 8;
+  return Math.min(18, Math.ceil(-log10) + 2);
+}
+
+function spotToRangeStrings(uiSpot: number): { lower: string; upper: string } {
+  const d = decimalsForSpotRange(uiSpot);
+  return {
+    lower: (uiSpot * 0.9).toFixed(d),
+    upper: (uiSpot * 1.1).toFixed(d),
+  };
+}
+
+/** Avoid `toFixed(6)` wiping tiny linked amounts for token1-heavy pairs. */
+function formatLinkedDepositAmount(value: number): string {
+  if (!Number.isFinite(value)) return '';
+  if (value === 0) return '0';
+  const a = Math.abs(value);
+  const frac = a >= 1 ? 6 : a >= 0.01 ? 8 : a >= 1e-6 ? 12 : 18;
+  let s = value.toFixed(frac);
+  s = s.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  return s;
+}
+
+interface SelectedIndexPool {
+  token0: string;
+  token1: string;
+  fee: number;
+  pair: string;
+  feeLabel: string;
+}
+
+// ─── Compact stat card ─────────────────────────────────────────────────────
+function StatCard({
+  label,
+  value,
+  unit,
+  delay = 0,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  delay?: number;
+}) {
+  return (
+    <ScrollReveal delay={delay} variant="scaleUp">
+      <div
+        style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)',
+          padding: '16px 18px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          transition: 'border-color 0.25s, box-shadow 0.25s',
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.07em',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          {label}
+        </span>
+        <span
+          style={{
+            fontSize: 20,
+            fontWeight: 800,
+            letterSpacing: '-0.02em',
+            lineHeight: 1.1,
+            color: 'var(--text-primary)',
+          }}
+        >
+          {value}
+        </span>
+        {unit && (
+          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{unit}</span>
+        )}
+      </div>
+    </ScrollReveal>
+  );
+}
+
+export default function PoolPage() {
+  const { isConnected, address } = useAppKitAccount();
+  const { open } = useAppKit();
+  const { showToast } = useToast();
+  const { tokens } = useTokens();
+
+  const [token0, setToken0] = useState<Token>(() => tokens[0]);
+  const [token1, setToken1] = useState<Token>(() => tokens[1]);
+
+  useEffect(() => {
+    setToken0(prev => tokens.find(t => t.address === prev.address) ?? tokens[0] ?? prev);
+    setToken1(prev => tokens.find(t => t.address === prev.address) ?? tokens[1] ?? prev);
+  }, [tokens]);
+  const [fee, setFee] = useState(3000);
+  const [amount0, setAmount0] = useState('');
+  const [amount1, setAmount1] = useState('');
+  const [priceLower, setPriceLower] = useState('0.9');
+  const [priceUpper, setPriceUpper] = useState('1.1');
+  const [pool, setPool] = useState<Pool | null>(null);
+  const [stats, setStats] = useState<PoolStats | null>(null);
+  const [loadingPool, setLoadingPool] = useState(false);
+  const [loadingTx, setLoadingTx] = useState(false);
+  const [balance0, setBalance0] = useState('0');
+  const [balance1, setBalance1] = useState('0');
+  /** When true, mint uses max usable ticks for this fee tier (matches common "full range"). */
+  const [fullRange, setFullRange] = useState(false);
+  /** Human: Token B per Token A (same convention as min/max range inputs). Used when creating or initializing a pool. */
+  const [initialPrice, setInitialPrice] = useState('1');
+
+  const [selectedIndexPool, setSelectedIndexPool] = useState<SelectedIndexPool | null>(null);
+  const [isLiquidityModalOpen, setLiquidityModalOpen] = useState(false);
+  const [isNewPoolModalOpen, setNewPoolModalOpen] = useState(false);
+
+  const navigate = useNavigate();
+
+  const [indexRows, setIndexRows] = useState<Record<string, unknown>[]>([]);
+  const [indexTotal, setIndexTotal] = useState(0);
+  const [indexLoading, setIndexLoading] = useState(false);
+  const [indexError, setIndexError] = useState<string | null>(null);
+  const [indexPage, setIndexPage] = useState(1);
+  /** API only accepts sortKey=createdAt for /pools */
+  const [indexCreatedDir, setIndexCreatedDir] = useState<'asc' | 'desc'>('desc');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setIndexLoading(true);
+      setIndexError(null);
+      try {
+        const skip = (indexPage - 1) * POOLS_INDEX_PAGE_SIZE;
+        const sortDirection = indexCreatedDir === 'asc' ? 1 : -1;
+        const { pools, total } = await listPoolsFromIndex({
+          skip,
+          limit: POOLS_INDEX_PAGE_SIZE,
+          sortKey: 'createdAt',
+          sortDirection,
+        });
+        if (cancelled) return;
+        const rows = pools.map(p => {
+          const feeNum = Number.parseInt(p.fee, 10);
+          const feeVal = Number.isFinite(feeNum) ? feeNum : 0;
+          return {
+            _rowKey: p.poolAddress,
+            pair: `${symbolForAddress(p.token0, tokens)} / ${symbolForAddress(p.token1, tokens)}`,
+            token0Symbol: symbolForAddress(p.token0, tokens),
+            token1Symbol: symbolForAddress(p.token1, tokens),
+            token0Color: colorForAddress(p.token0, tokens),
+            token1Color: colorForAddress(p.token1, tokens),
+            token0Address: p.token0,
+            token1Address: p.token1,
+            feeRaw: feeVal,
+            feeLabel: feeBpsLabel(feeVal),
+            poolAddress: p.poolAddress,
+            createdAt: new Date(p.createdAt).toLocaleString(undefined, {
+              dateStyle: 'medium',
+              timeStyle: 'short',
+            }),
+          };
+        });
+        setIndexRows(rows);
+        setIndexTotal(total);
+      } catch (e) {
+        if (!cancelled) {
+          setIndexError((e as Error)?.message ?? 'Failed to load pools');
+          setIndexRows([]);
+          setIndexTotal(0);
+        }
+      } finally {
+        if (!cancelled) setIndexLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [indexPage, indexCreatedDir, tokens]);
+
+  /** Invalidate range when fee tier changes so we never keep the previous pool's ticks/prices. */
+  useEffect(() => {
+    setPriceLower('0.9');
+    setPriceUpper('1.1');
+    setFullRange(false);
+  }, [fee]);
+
+  useEffect(() => {
+    setLoadingPool(true);
+    Promise.all([
+      getPool(token0.address, token1.address, fee),
+      getPoolStats(token0.address, token1.address, fee),
+    ]).then(([p, s]) => {
+      setPool(p);
+      setStats(s);
+      if (p && BigInt(p.sqrtPriceX96) !== 0n) {
+        const uiP =
+          p.token0.address.toLowerCase() === token0.address.toLowerCase()
+            ? p.price
+            : 1 / p.price;
+        const { lower, upper } = spotToRangeStrings(uiP);
+        setPriceLower(lower);
+        setPriceUpper(upper);
+      }
+    }).finally(() => setLoadingPool(false));
+  }, [token0, token1, fee]);
+
+  const activeFormMode = isNewPoolModalOpen ? 'new' : 'existing';
+  const poolInitialized = pool !== null && BigInt(pool.sqrtPriceX96) !== 0n;
+  const needBootstrap = activeFormMode === 'new' && !poolInitialized;
+
+  useEffect(() => {
+    if (loadingPool) return;
+    if (activeFormMode !== 'new' || poolInitialized) return;
+    const p = Number.parseFloat(initialPrice);
+    if (!Number.isFinite(p) || p <= 0) return;
+    const { lower, upper } = spotToRangeStrings(p);
+    setPriceLower(lower);
+    setPriceUpper(upper);
+  }, [pool, loadingPool, initialPrice, activeFormMode, poolInitialized, token0.address, token1.address]);
+
+  useEffect(() => {
+    if (isConnected && address) {
+      getTokenBalance(token0.address, address).then(setBalance0);
+      getTokenBalance(token1.address, address).then(setBalance1);
+    }
+  }, [isConnected, address, token0, token1]);
+
+  useEffect(() => {
+    setFullRange(false);
+  }, [token0.address, token1.address, fee]);
+
+  const linkPrice = useMemo(() => {
+    if (poolInitialized && pool) {
+      const match = pool.token0.address.toLowerCase() === token0.address.toLowerCase();
+      const p = match ? pool.price : 1 / pool.price;
+      return Number.isFinite(p) && p > 0 ? p : null;
+    }
+    if (activeFormMode === 'existing' && !poolInitialized) {
+      const pl = Number.parseFloat(priceLower);
+      const pu = Number.parseFloat(priceUpper);
+      if (Number.isFinite(pl) && Number.isFinite(pu) && pl > 0 && pu > 0 && pl < pu) {
+        return Math.sqrt(pl * pu);
+      }
+    }
+    const ip = Number.parseFloat(initialPrice);
+    if (!Number.isFinite(ip) || ip <= 0) return null;
+    if (activeFormMode === 'new') return ip;
+    if (activeFormMode === 'existing') return ip;
+    return null;
+  }, [pool, poolInitialized, token0.address, initialPrice, activeFormMode, priceLower, priceUpper]);
+
+  /** If amount0 was entered while pool/linkPrice was loading, fill amount1 once price is known. */
+  useEffect(() => {
+    if (linkPrice === null) return;
+    const raw = amount0.trim();
+    if (!raw) return;
+    const a0 = Number.parseFloat(raw);
+    if (!Number.isFinite(a0) || a0 <= 0) return;
+    setAmount1(formatLinkedDepositAmount(a0 * linkPrice));
+  }, [linkPrice, fee, pool?.address, amount0]);
+
+  const handleAmount0Change = (val: string) => {
+    setAmount0(val);
+    if (linkPrice !== null && val) {
+      const a0 = Number.parseFloat(val);
+      if (Number.isFinite(a0) && a0 > 0) {
+        setAmount1(formatLinkedDepositAmount(a0 * linkPrice));
+      }
+    }
+  };
+
+  const handleAmount1Change = (val: string) => {
+    setAmount1(val);
+    if (linkPrice !== null && val) {
+      const a1 = Number.parseFloat(val);
+      if (Number.isFinite(a1) && a1 > 0) {
+        setAmount0(formatLinkedDepositAmount(a1 / linkPrice));
+      }
+    }
+  };
+
+  const tickSpacing = FEE_TIERS.find(f => f.fee === fee)?.tickSpacing ?? 60;
+
+  const { tickLower, tickUpper, ticksReady } = useMemo(() => {
+    if (fullRange) return { ...maxRangeTicksForSpacing(tickSpacing), ticksReady: true as const };
+    const lo = parseFloat(priceLower);
+    const hi = parseFloat(priceUpper);
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo <= 0 || hi <= 0 || lo >= hi) {
+      return { tickLower: 0, tickUpper: 0, ticksReady: false as const };
+    }
+    const r = getTickRange(fee, lo, hi);
+    return { tickLower: r.tickLower, tickUpper: r.tickUpper, ticksReady: true as const };
+  }, [fullRange, tickSpacing, fee, priceLower, priceUpper]);
+
+  const currentPrice = linkPrice ?? 1;
+  const pl = parseFloat(priceLower);
+  const pu = parseFloat(priceUpper);
+  const rangePricesValid =
+    fullRange || (Number.isFinite(pl) && Number.isFinite(pu) && pl > 0 && pu > 0 && pl < pu);
+  const inRange =
+    fullRange
+    || (linkPrice !== null
+      && Number.isFinite(pl)
+      && Number.isFinite(pu)
+      && pl <= currentPrice
+      && currentPrice <= pu);
+
+  const handleSetFullRange = () => {
+    setFullRange(true);
+  };
+
+  const handleAddLiquidity = async () => {
+    if (!isConnected) { open(); return; }
+    if (!amount0 || !amount1) return;
+    if (!rangePricesValid) {
+      showToast('error', 'Set a valid price range (min must be below max) or tap Full range.');
+      return;
+    }
+    if (!(tickLower < tickUpper)) {
+      showToast('error', 'Invalid ticks for this range. Widen min/max price or use Full range.');
+      return;
+    }
+    setLoadingTx(true);
+    try {
+      if (needBootstrap) {
+        const ip = parseFloat(initialPrice);
+        if (!Number.isFinite(ip) || ip <= 0) {
+          showToast('error', 'Set a valid starting price (Token B per Token A).');
+          setLoadingTx(false);
+          return;
+        }
+        const lo =
+          token0.address.toLowerCase() < token1.address.toLowerCase() ? token0 : token1;
+        const hi =
+          token0.address.toLowerCase() < token1.address.toLowerCase() ? token1 : token0;
+        const aIsLo = token0.address.toLowerCase() === lo.address.toLowerCase();
+        const chainHuman1Per0 = aIsLo ? ip : 1 / ip;
+        const sqrtX96 = humanPriceToken1PerToken0ToSqrtPriceX96(
+          chainHuman1Per0,
+          lo.decimals,
+          hi.decimals,
+        );
+        if (sqrtX96 === 0n) {
+          showToast('error', 'Could not derive starting price — try a different value.');
+          setLoadingTx(false);
+          return;
+        }
+        showToast('info', 'Creating or initializing pool...');
+        await ensurePoolCreatedAndInitialized(token0.address, token1.address, fee, sqrtX96);
+        const [freshPool, freshStats] = await Promise.all([
+          getPool(token0.address, token1.address, fee),
+          getPoolStats(token0.address, token1.address, fee),
+        ]);
+        setPool(freshPool);
+        setStats(freshStats);
+      }
+      showToast('info', 'Adding liquidity...');
+      const result = await addLiquidity({
+        token0, token1, fee, tickLower, tickUpper,
+        amount0Desired: amount0, amount1Desired: amount1,
+      });
+      if (address) {
+        recordTxHistory(address, {
+          hash: result.hash,
+          kind: 'add_liquidity',
+          summary: `Added liquidity ${token0.symbol}/${token1.symbol} · NFT #${result.tokenId}`,
+        });
+      }
+      showToast('success', `Liquidity added! Token ID: #${result.tokenId}. Tx: ${shortenTxHash(result.hash)}`);
+      setAmount0(''); setAmount1('');
+    } catch (err) {
+      showToast('error', resolveError(err));
+    } finally {
+      setLoadingTx(false);
+    }
+  };
+
+  const initialValid = Number.isFinite(parseFloat(initialPrice)) && parseFloat(initialPrice) > 0;
+
+  const isButtonDisabled =
+    isConnected
+    && (
+      !amount0
+      || !amount1
+      || loadingTx
+      || !rangePricesValid
+      || (activeFormMode === 'existing' && (!pool || !poolInitialized))
+      || (needBootstrap && !initialValid)
+    );
+
+  const getButtonLabel = () => {
+    if (!isConnected) return 'Connect Wallet';
+    if (!amount0 || !amount1) return 'Enter amounts';
+    if (!rangePricesValid) return 'Set price range';
+    if (activeFormMode === 'existing' && !pool && !loadingPool) return 'Pool does not exist';
+    if (activeFormMode === 'existing' && pool && !poolInitialized) return 'Pool not initialized — use New pool';
+    if (needBootstrap && !initialValid) return 'Set starting price';
+    if (needBootstrap) return 'Create pool & add liquidity';
+    return 'Add Liquidity';
+  };
+
+  /** Pre-fill the liquidity form from a selected index-pool row, then smooth-scroll to the form. */
+  const handleSelectPool = useCallback((row: Record<string, unknown>) => {
+    const t0addr = row.token0Address as string;
+    const t1addr = row.token1Address as string;
+    const feeNum = row.feeRaw as number;
+
+    const findToken = (addr: string): Token => {
+      const found = tokens.find(t => t.address.toLowerCase() === addr.toLowerCase());
+      if (found) return found;
+      return {
+        address: addr,
+        symbol: `${addr.slice(0, 6)}…${addr.slice(-4)}`,
+        name: 'Unknown token',
+        decimals: 18,
+        logoColor: '#8b949e',
+      };
+    };
+
+    setToken0(findToken(t0addr));
+    setToken1(findToken(t1addr));
+    setFee(feeNum);
+    setAmount0('');
+    setAmount1('');
+    setSelectedIndexPool({
+      token0: t0addr,
+      token1: t1addr,
+      fee: feeNum,
+      pair: row.pair as string,
+      feeLabel: row.feeLabel as string,
+    });
+    setLiquidityModalOpen(true);
+  }, [tokens]);
+
+  const handleSwapPair = useCallback((row: Record<string, unknown>) => {
+    const t0addr = encodeURIComponent(row.token0Address as string);
+    const t1addr = encodeURIComponent(row.token1Address as string);
+    const feeNum = row.feeRaw as number;
+    navigate(`/swap?tokenIn=${t0addr}&tokenOut=${t1addr}&fee=${feeNum}`);
+  }, [navigate]);
+
+  const onPoolsTableSort = useCallback((key: string, dir: 'asc' | 'desc') => {
+    if (key !== 'createdAt') return;
+    setIndexPage(1);
+    setIndexCreatedDir(dir);
+  }, []);
+
+  const poolsIndexColumns = useMemo<ColumnConfig[]>(
+    () => [
+      {
+        key: 'pair',
+        label: 'Pair',
+        type: 'text',
+        render: (_: unknown, row: Record<string, unknown>) => {
+          const isSelected =
+            selectedIndexPool !== null &&
+            (row.token0Address as string).toLowerCase() === selectedIndexPool.token0.toLowerCase() &&
+            (row.token1Address as string).toLowerCase() === selectedIndexPool.token1.toLowerCase() &&
+            (row.feeRaw as number) === selectedIndexPool.fee;
+          const c0 = row.token0Color as string | undefined;
+          const c1 = row.token1Color as string | undefined;
+          return (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ position: 'relative', display: 'flex', alignItems: 'center', marginRight: 2 }}>
+                <span style={{
+                  width: 20, height: 20, borderRadius: '50%',
+                  background: c0 ?? '#8b949e',
+                  border: '2px solid var(--bg-primary)',
+                  display: 'inline-block', flexShrink: 0,
+                }} />
+                <span style={{
+                  width: 20, height: 20, borderRadius: '50%',
+                  background: c1 ?? '#8b949e',
+                  border: '2px solid var(--bg-primary)',
+                  display: 'inline-block', flexShrink: 0,
+                  marginLeft: -7,
+                }} />
+              </span>
+              <span style={{ fontWeight: 600, fontSize: 13 }}>{row.token0Symbol as string}/{row.token1Symbol as string}</span>
+              {isSelected && (
+                <span className="badge badge-green" style={{ fontSize: 10, padding: '1px 6px' }}>
+                  Selected
+                </span>
+              )}
+            </span>
+          );
+        },
+      },
+      { key: 'feeLabel', label: 'Fee', type: 'text' },
+      { key: 'poolAddress', label: 'Pool Contract', type: 'hash' },
+      { key: 'createdAt', label: 'Created', type: 'text', sortable: true },
+      {
+        key: 'action',
+        label: '',
+        type: 'text',
+        render: (_: unknown, row: Record<string, unknown>) => {
+          const isSelected =
+            selectedIndexPool !== null &&
+            (row.token0Address as string).toLowerCase() === selectedIndexPool.token0.toLowerCase() &&
+            (row.token1Address as string).toLowerCase() === selectedIndexPool.token1.toLowerCase() &&
+            (row.feeRaw as number) === selectedIndexPool.fee;
+          return (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => handleSelectPool(row)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    border: '1px solid',
+                    borderColor: isSelected ? 'var(--stake-green, #22c55e)' : 'var(--accent-primary)',
+                    background: isSelected ? 'rgba(34,197,94,0.12)' : 'rgba(88,166,255,0.10)',
+                    color: isSelected ? 'var(--stake-green, #22c55e)' : 'var(--accent-primary)',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {isSelected ? '✓ Selected' : '+ Add Liquidity'}
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => handleSwapPair(row)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    border: '1px solid var(--border)',
+                    background: 'rgba(255,255,255,0.05)',
+                    color: 'var(--text-primary)',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  Swap
+                </motion.button>
+              </div>
+          );
+        },
+      },
+    ],
+    [selectedIndexPool, handleSelectPool],
+  );
+
+  // ─── Pool stats cards (rendered outside the form) ────────────────────────
+  const currentSpotPrice = pool && poolInitialized
+    ? (pool.token0.address.toLowerCase() === token0.address.toLowerCase()
+      ? pool.price
+      : 1 / pool.price)
+    : null;
+
+  const poolStatsSection = (
+    <AnimatePresence>
+      {loadingPool && !pool && (
+        <motion.div
+          key="skeleton"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}
+        >
+          {[0, 1, 2].map(i => (
+            <div key={i} className="skeleton" style={{ height: 88, borderRadius: 16 }} />
+          ))}
+        </motion.div>
+      )}
+      {pool && stats && poolInitialized && currentSpotPrice !== null && (
+        <motion.div
+          key="stats"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 8 }}
+          transition={{ duration: 0.25 }}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}
+        >
+          <StatCard
+            label="Current Price"
+            value={formatNumber(currentSpotPrice, 4)}
+            unit={`${token1.symbol} per ${token0.symbol}`}
+            delay={0}
+          />
+          <StatCard label="TVL" value={formatCompactUSD(stats.tvl)} delay={0.08} />
+          <StatCard
+            label="24h Fees"
+            value={formatCompactUSD(stats.fees24h)}
+            unit={`Vol: ${formatCompactUSD(stats.volume24h)}`}
+            delay={0.16}
+          />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
+  // ─── Liquidity form JSX (shared between existing & new modes) ────────────
+  const liquidityForm = (
+    <motion.div
+      className="stake-card glow"
+      layout
+      style={{ display: 'flex', flexDirection: 'column', gap: 20 }}
+      {...cardSpring}
+    >
+      {/* Token Pair */}
+      <div>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.07em',
+            color: 'var(--text-secondary)',
+            marginBottom: 10,
+          }}
+        >
+          Select Pair
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <TokenInput
+            label="Token A" token={token0} amount=""
+            onTokenChange={t => { setToken0(t); setAmount0(''); setAmount1(''); setSelectedIndexPool(null); }}
+            excludeToken={token1} readonly
+          />
+          <TokenInput
+            label="Token B" token={token1} amount=""
+            onTokenChange={t => { setToken1(t); setAmount0(''); setAmount1(''); setSelectedIndexPool(null); }}
+            excludeToken={token0} readonly
+          />
+        </div>
+      </div>
+
+      {/* Fee Tier */}
+      <div>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.07em',
+            color: 'var(--text-secondary)',
+            marginBottom: 10,
+          }}
+        >
+          Fee Tier
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {FEE_TIERS.map(tier => (
+            <motion.button
+              key={tier.fee}
+              onClick={() => setFee(tier.fee)}
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.95 }}
+              className={`fee-chip${fee === tier.fee ? ' selected' : ''}`}
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                borderRadius: 10,
+                padding: '10px 8px',
+              }}
+            >
+              <span style={{ fontWeight: 700, fontSize: 13 }}>{tier.label}</span>
+              <span style={{ fontSize: 11, fontWeight: 400, marginTop: 2, opacity: 0.75 }}>
+                {tier.description}
+              </span>
+            </motion.button>
+          ))}
+        </div>
+      </div>
+
+      {/* Starting price — only when bootstrapping a new pool */}
+      {needBootstrap && (
+        <div>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.07em',
+              color: 'var(--text-secondary)',
+              marginBottom: 6,
+            }}
+          >
+            Starting Price
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, lineHeight: 1.4 }}>
+            Used when the pool is missing or not initialized yet. Same units as the range below:{' '}
+            <strong>
+              1 {token0.symbol} = ? {token1.symbol}
+            </strong>
+            .
+          </div>
+          <input
+            type="number"
+            min={0}
+            step="any"
+            value={initialPrice}
+            onChange={e => setInitialPrice(e.target.value)}
+            className="stake-input"
+            style={{ fontSize: 16 }}
+          />
+        </div>
+      )}
+
+      {/* Pool not initialized warning */}
+      <AnimatePresence>
+        {pool && !poolInitialized && (
+          <motion.div
+            layout
+            className="warning-box"
+            initial={{ opacity: 0, scale: 0.96, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 8 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          >
+            Pool contract exists but has no starting price yet. Use <strong>New pool</strong>, set starting
+            price, then add liquidity (or initialize first).
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* No pool warning */}
+      <AnimatePresence>
+        {activeFormMode === 'existing' && !pool && !loadingPool && (
+          <motion.div
+            layout
+            className="warning-box"
+            initial={{ opacity: 0, scale: 0.96, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 8 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          >
+            ⚠ No pool found for this pair and fee. Switch to <strong>New pool</strong> to deploy and seed it.
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {activeFormMode === 'new' && !pool && !loadingPool && (
+          <motion.div
+            layout
+            className="info-box"
+            initial={{ opacity: 0, scale: 0.96, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 8 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          >
+            No pool yet for this pair
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Price Range */}
+      <div>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 10,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.07em',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            Price Range
+          </span>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {poolInitialized && (
+              <span className={`badge ${inRange ? 'badge-green' : 'badge-yellow'}`} style={{ fontSize: 11 }}>
+                {inRange ? '● In Range' : '○ Out of Range'}
+              </span>
+            )}
+            {fullRange && (
+              <span className="badge" style={{ fontSize: 11 }}>
+                Max tick range
+              </span>
+            )}
+            <motion.button
+              className="btn-ghost"
+              style={{ fontSize: 12 }}
+              onClick={handleSetFullRange}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              Full Range
+            </motion.button>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {[
+            { label: 'Min Price', value: priceLower, onChange: setPriceLower },
+            { label: 'Max Price', value: priceUpper, onChange: setPriceUpper },
+          ].map(({ label, value, onChange }) => (
+            <div key={label} className="range-input">
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>{label}</div>
+              <input
+                type="number"
+                value={value}
+                onChange={e => {
+                  setFullRange(false);
+                  onChange(e.target.value);
+                }}
+                style={{
+                  background: 'none', border: 'none', outline: 'none',
+                  fontSize: 18, fontWeight: 600, color: 'var(--text-primary)',
+                  width: '100%', textAlign: 'center',
+                }}
+              />
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                {token1.symbol} per {token0.symbol}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <div className="price-display" style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tick Lower</div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{ticksReady ? tickLower : '—'}</div>
+          </div>
+          <div className="price-display" style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tick Upper</div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{ticksReady ? tickUpper : '—'}</div>
+          </div>
+        </div>
+
+        {/* Out-of-range warning animates in/out without layout jump */}
+        <AnimatePresence>
+          {!inRange && poolInitialized && pool && (
+            <motion.div
+              layout
+              className="warning-box"
+              initial={{ opacity: 0, height: 0, marginTop: 0 }}
+              animate={{ opacity: 1, height: 'auto', marginTop: 10 }}
+              exit={{ opacity: 0, height: 0, marginTop: 0 }}
+              transition={{ duration: 0.22 }}
+              style={{ overflow: 'hidden' }}
+            >
+              ⚠ Your position will not earn fees at the current price of {formatNumber(currentPrice, 4)}.
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Deposit Amounts */}
+      <div>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.07em',
+            color: 'var(--text-secondary)',
+            marginBottom: 10,
+          }}
+        >
+          Deposit Amounts
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <TokenInput
+            label={token0.symbol} token={token0} amount={amount0}
+            balance={isConnected ? balance0 : undefined}
+            onTokenChange={() => { }} onAmountChange={handleAmount0Change}
+          />
+          <TokenInput
+            label={token1.symbol} token={token1} amount={amount1}
+            balance={isConnected ? balance1 : undefined}
+            onTokenChange={() => { }} onAmountChange={handleAmount1Change}
+          />
+        </div>
+      </div>
+
+      {/* Summary — slides in when both amounts are entered */}
+      <AnimatePresence>
+        {amount0 && amount1 && (poolInitialized || activeFormMode === 'new') && (
+          <motion.div
+            layout
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.22 }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div className="divider" />
+            {[
+              { label: `Pooled ${token0.symbol}`, value: formatNumber(parseFloat(amount0), 4) },
+              { label: `Pooled ${token1.symbol}`, value: formatNumber(parseFloat(amount1), 4) },
+              { label: 'Price Range', value: `${priceLower} – ${priceUpper}` },
+              { label: 'Fee Tier', value: FEE_TIERS.find(f => f.fee === fee)?.label },
+            ].map(({ label, value }) => (
+              <div key={label} className="stat-row">
+                <span className="stat-label">{label}</span>
+                <span className="stat-value">{value}</span>
+              </div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Primary action button */}
+      <motion.button
+        layout
+        className="btn-primary"
+        onClick={handleAddLiquidity}
+        disabled={!!isButtonDisabled}
+        whileHover={!isButtonDisabled ? { scale: 1.015, y: -1 } : {}}
+        whileTap={!isButtonDisabled ? { scale: 0.985 } : {}}
+        animate={
+          loadingTx
+            ? { opacity: [0.4, 1, 0.4] }
+            : { opacity: 1 }
+        }
+        transition={
+          loadingTx
+            ? { opacity: { repeat: Infinity, duration: 1.1, ease: 'easeInOut' } }
+            : { type: 'spring', stiffness: 400, damping: 20 }
+        }
+      >
+        {loadingTx ? <span className="spinner" /> : getButtonLabel()}
+      </motion.button>
+    </motion.div>
+  );
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', paddingBottom: 80 }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px' }}>
+
+        {/* ── Page header ── */}
+        <motion.div
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 22, paddingTop: 52, paddingBottom: 28 }}
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          <div>
+            <h1 className="page-heading">Liquidity Pools</h1>
+            <p style={{ fontSize: 15, color: 'var(--text-secondary)', margin: 0 }}>
+              Add liquidity to earn fees on every swap in a pool.
+            </p>
+          </div>
+          <motion.button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              setSelectedIndexPool(null);
+              setNewPoolModalOpen(true);
+            }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            style={{ padding: '10px 16px', width: 'auto', minWidth: 'auto', alignSelf: 'flex-start' }}
+          >
+            New Pool
+          </motion.button>
+        </motion.div>
+
+        {/* ── Existing Pool: index table + modal trigger ── */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
+        >
+            {/* Error banner */}
+            {indexError && (
+              <div className="warning-box" style={{ marginBottom: 12 }}>
+                Could not load pool list: {indexError}
+              </div>
+            )}
+
+            {/* Pools index table */}
+            <ScrollReveal>
+              <DataTable
+                title="Registered Pools"
+                subtitle="Pools registered on the indexer API. Click + Add Liquidity on any row to deposit into that pool."
+                columns={poolsIndexColumns}
+                data={indexRows}
+                loading={indexLoading}
+                pageSize={POOLS_INDEX_PAGE_SIZE}
+                serverPaginated
+                totalRowCount={indexTotal}
+                currentPage={indexPage}
+                initialSort={{ key: 'createdAt', dir: 'desc' }}
+                onSort={onPoolsTableSort}
+                onPageChange={p => setIndexPage(p)}
+                emptyText="No pools returned from the API"
+              />
+            </ScrollReveal>
+
+          </motion.div>
+
+        <AnimatePresence>
+          {isLiquidityModalOpen && (
+            <motion.div
+              className="modal-overlay"
+              onClick={() => { setLiquidityModalOpen(false); setSelectedIndexPool(null); }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <motion.div
+                className="modal"
+                style={{ maxWidth: 720, width: '100%' }}
+                onClick={e => e.stopPropagation()}
+                initial={{ scale: 0.92, opacity: 0, y: 12 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.92, opacity: 0, y: 12 }}
+                transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+              >
+                <div className="modal-header">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h2 style={{ margin: 0, fontSize: 22 }}>Add Liquidity</h2>
+                      <p style={{ margin: '6px 0 0', color: 'var(--text-secondary)', fontSize: 13 }}>
+                        {selectedIndexPool
+                          ? `Depositing into ${selectedIndexPool.pair} · ${selectedIndexPool.feeLabel}`
+                          : 'Select a pool above or configure the pair manually.'}
+                      </p>
+                    </div>
+                    <motion.button
+                      className="btn-ghost"
+                      onClick={() => { setLiquidityModalOpen(false); setSelectedIndexPool(null); }}
+                      whileHover={{ scale: 1.15 }}
+                      whileTap={{ scale: 0.9 }}
+                      style={{ fontSize: 20, padding: '0 6px' }}
+                    >
+                      ×
+                    </motion.button>
+                  </div>
+                </div>
+                <div className="modal-content">
+                  {poolStatsSection}
+                  {liquidityForm}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {isNewPoolModalOpen && (
+            <motion.div
+              className="modal-overlay"
+              onClick={() => { setNewPoolModalOpen(false); setSelectedIndexPool(null); }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <motion.div
+                className="modal"
+                style={{ maxWidth: 720, width: '100%' }}
+                onClick={e => e.stopPropagation()}
+                initial={{ scale: 0.92, opacity: 0, y: 12 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.92, opacity: 0, y: 12 }}
+                transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+              >
+                <div className="modal-header">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h2 style={{ margin: 0, fontSize: 22 }}>Create New Pool</h2>
+                      <p style={{ margin: '6px 0 0', color: 'var(--text-secondary)', fontSize: 13 }}>
+                        Deploy a new pool and seed it with initial liquidity in one step.
+                      </p>
+                    </div>
+                    <motion.button
+                      className="btn-ghost"
+                      onClick={() => { setNewPoolModalOpen(false); setSelectedIndexPool(null); }}
+                      whileHover={{ scale: 1.15 }}
+                      whileTap={{ scale: 0.9 }}
+                      style={{ fontSize: 20, padding: '0 6px' }}
+                    >
+                      ×
+                    </motion.button>
+                  </div>
+                </div>
+                <div className="modal-content">
+                  {poolStatsSection}
+                  {liquidityForm}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+      </div>
+    </div>
+  );
+}
