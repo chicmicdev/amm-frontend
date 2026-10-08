@@ -5,10 +5,29 @@ import { useWalletClient } from 'wagmi';
 import { useAppKitAccount } from '@reown/appkit/react';
 import { LENDING_CONTRACTS, INTEREST_RATE_MODE, REFERRAL_CODE, BASE_SEPOLIA_RPC, LENDING_CHAIN_ID } from '../config/lending';
 import { LENDING_POOL_ABI, ERC20_ABI } from '../contracts/lendingAbis';
+import { submitWithManagedNonce } from '../services/api/transactionNonceManager';
 
 export type TxStatus = 'idle' | 'approving' | 'pending' | 'success' | 'error';
 
 const readClient = createPublicClient({ chain: baseSepolia, transport: http(BASE_SEPOLIA_RPC) });
+
+function submitLendingTransaction(
+  account: `0x${string}`,
+  submit: (nonce: number) => Promise<`0x${string}`>,
+): Promise<`0x${string}`> {
+  return submitWithManagedNonce({
+    account,
+    chainId: LENDING_CHAIN_ID,
+    getNetworkNonce: async () => {
+      const [latest, pending] = await Promise.all([
+        readClient.getTransactionCount({ address: account, blockTag: 'latest' }),
+        readClient.getTransactionCount({ address: account, blockTag: 'pending' }),
+      ]);
+      return Math.max(latest, pending);
+    },
+    submit,
+  });
+}
 
 function parseError(e: unknown): string {
   const msg = [
@@ -65,13 +84,16 @@ export function useLendingActions() {
     }) as bigint;
     if (allowance < amount) {
       setStatus('approving');
-      const hash = await walletClient.writeContract({
-        address: asset, abi: ERC20_ABI,
-        functionName: 'approve',
-        // Approve just enough for this operation (improves UX vs "Unlimited").
-        args: [LENDING_CONTRACTS.POOL, amount],
-        gas: 100_000n,
-      });
+      const hash = await submitLendingTransaction(address as `0x${string}`, nonce =>
+        walletClient.writeContract({
+          address: asset, abi: ERC20_ABI,
+          functionName: 'approve',
+          // Approve just enough for this operation (improves UX vs "Unlimited").
+          args: [LENDING_CONTRACTS.POOL, amount],
+          nonce,
+          gas: 100_000n,
+        }),
+      );
       const approveReceipt = await readClient.waitForTransactionReceipt({ hash });
       if (approveReceipt.status === 'reverted') throw new Error('Approval transaction reverted on-chain.');
     }
@@ -109,12 +131,15 @@ export function useLendingActions() {
       });
 
       setStatus('pending');
-      const hash = await walletClient.writeContract({
-        address: LENDING_CONTRACTS.POOL, abi: LENDING_POOL_ABI,
-        functionName: 'supply',
-        args: [asset, parsed, address as `0x${string}`, REFERRAL_CODE],
-        gas: 400_000n,
-      });
+      const hash = await submitLendingTransaction(address as `0x${string}`, nonce =>
+        walletClient.writeContract({
+          address: LENDING_CONTRACTS.POOL, abi: LENDING_POOL_ABI,
+          functionName: 'supply',
+          args: [asset, parsed, address as `0x${string}`, REFERRAL_CODE],
+          nonce,
+          gas: 400_000n,
+        }),
+      );
       const receipt = await readClient.waitForTransactionReceipt({ hash });
       if (receipt.status === 'reverted') throw new Error('Supply transaction reverted on-chain.');
       setStatus('success');
@@ -126,12 +151,15 @@ export function useLendingActions() {
     try {
       ensureCorrectChain();
       setStatus('pending'); setError(null);
-      const hash = await walletClient.writeContract({
-        address: LENDING_CONTRACTS.POOL, abi: LENDING_POOL_ABI,
-        functionName: 'borrow',
-        args: [asset, parseUnits(amount, decimals), BigInt(INTEREST_RATE_MODE.VARIABLE), REFERRAL_CODE, address as `0x${string}`],
-        gas: 500_000n,
-      });
+      const hash = await submitLendingTransaction(address as `0x${string}`, nonce =>
+        walletClient.writeContract({
+          address: LENDING_CONTRACTS.POOL, abi: LENDING_POOL_ABI,
+          functionName: 'borrow',
+          args: [asset, parseUnits(amount, decimals), BigInt(INTEREST_RATE_MODE.VARIABLE), REFERRAL_CODE, address as `0x${string}`],
+          nonce,
+          gas: 500_000n,
+        }),
+      );
       const receipt = await readClient.waitForTransactionReceipt({ hash });
       if (receipt.status === 'reverted') throw new Error('Borrow transaction reverted on-chain.');
       setStatus('success');
@@ -146,12 +174,15 @@ export function useLendingActions() {
       const parsed = parseUnits(amount, decimals);
       await ensureApproval(asset, parsed);
       setStatus('pending');
-      const hash = await walletClient.writeContract({
-        address: LENDING_CONTRACTS.POOL, abi: LENDING_POOL_ABI,
-        functionName: 'repay',
-        args: [asset, parsed, BigInt(INTEREST_RATE_MODE.VARIABLE), address as `0x${string}`],
-        gas: 400_000n,
-      });
+      const hash = await submitLendingTransaction(address as `0x${string}`, nonce =>
+        walletClient.writeContract({
+          address: LENDING_CONTRACTS.POOL, abi: LENDING_POOL_ABI,
+          functionName: 'repay',
+          args: [asset, parsed, BigInt(INTEREST_RATE_MODE.VARIABLE), address as `0x${string}`],
+          nonce,
+          gas: 400_000n,
+        }),
+      );
       const receipt = await readClient.waitForTransactionReceipt({ hash });
       if (receipt.status === 'reverted') throw new Error('Repay transaction reverted on-chain.');
       setStatus('success');
@@ -167,12 +198,15 @@ export function useLendingActions() {
       // exact aToken amount internally — avoids off-by-one reverts caused by
       // interest accruing between balance-fetch and transaction execution.
       const amountArg = useMax ? maxUint256 : parseUnits(amount, decimals);
-      const hash = await walletClient.writeContract({
-        address: LENDING_CONTRACTS.POOL, abi: LENDING_POOL_ABI,
-        functionName: 'withdraw',
-        args: [asset, amountArg, address as `0x${string}`],
-        gas: 500_000n,
-      });
+      const hash = await submitLendingTransaction(address as `0x${string}`, nonce =>
+        walletClient.writeContract({
+          address: LENDING_CONTRACTS.POOL, abi: LENDING_POOL_ABI,
+          functionName: 'withdraw',
+          args: [asset, amountArg, address as `0x${string}`],
+          nonce,
+          gas: 500_000n,
+        }),
+      );
       const receipt = await readClient.waitForTransactionReceipt({ hash });
       if (receipt.status === 'reverted') throw new Error('Withdraw transaction reverted on-chain.');
       setStatus('success');

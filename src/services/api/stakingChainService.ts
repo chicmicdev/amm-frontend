@@ -9,7 +9,7 @@ import { erc20Abi } from '../../contracts/abis';
 import { stakingPoolAbi } from '../../contracts/stakingPoolAbi';
 import { collectViemErrorText } from '../../utils/viemErrors';
 import { devError, devWarn } from '../../utils/devLog';
-import { ammWagmiConfig, getPublicClient } from './ammClient';
+import { ammWagmiConfig, getPublicClient, submitAmmTransaction } from './ammClient';
 import { STAKING_MIN_CLAIM_REWARD_HUMAN, STAKING_REWARD_MODE_APR } from '../../utils/stakingFormat';
 import { fetchTokenDecimals, fetchTokenSymbol } from './tokenMetadata';
 import { polygonAmoy } from 'viem/chains';
@@ -153,17 +153,20 @@ async function ensureStakeAllowance(
     args: [user, poolAddr],
   })) as bigint;
   if (allowance >= need) return;
-  const hash = await writeContract(wallet, {
-    account: user,
-    chain: polygonAmoy,
-    address: stakingToken,
-    abi: erc20Abi,
-    functionName: 'approve',
-    args: [poolAddr, maxUint256],
-    maxFeePerGas: GAS.maxFeePerGas,
-    maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
-    gas: GAS.limits.approve,
-  });
+  const hash = await submitAmmTransaction(user, nonce =>
+    writeContract(wallet, {
+      account: user,
+      chain: polygonAmoy,
+      address: stakingToken,
+      abi: erc20Abi,
+      functionName: 'approve',
+      args: [poolAddr, maxUint256],
+      nonce,
+      maxFeePerGas: GAS.maxFeePerGas,
+      maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+      gas: GAS.limits.approve,
+    }),
+  );
   const receipt = await waitForTransactionReceipt(config, { hash, chainId: CHAIN_ID });
   if (receipt.status !== 'success') {
     devError('tx/staking', 'approveStakingToken: receipt not success', { hash, stakingToken });
@@ -180,15 +183,18 @@ export async function stakeOnChain(amountHuman: string): Promise<{ txHash: `0x${
     const amountWei = parseUnits(amountHuman.trim(), meta.stakeDecimals);
     if (amountWei <= 0n) throw new Error('Amount must be greater than zero.');
     await ensureStakeAllowance(wallet, user, meta.stakingToken, amountWei);
-    const hash = await writeContract(wallet, {
-      address: poolAddr,
-      abi: stakingPoolAbi,
-      functionName: 'stake',
-      args: [amountWei],
-      maxFeePerGas: GAS.maxFeePerGas,
-      maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
-      gas: 200_000n,
-    });
+    const hash = await submitAmmTransaction(user, nonce =>
+      writeContract(wallet, {
+        address: poolAddr,
+        abi: stakingPoolAbi,
+        functionName: 'stake',
+        args: [amountWei],
+        nonce,
+        maxFeePerGas: GAS.maxFeePerGas,
+        maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+        gas: 200_000n,
+      }),
+    );
     const receipt = await waitForTransactionReceipt(config, { hash, chainId: CHAIN_ID });
     if (receipt.status !== 'success') throw new Error('Stake transaction reverted.');
     return { txHash: hash };
@@ -205,15 +211,18 @@ export async function withdrawOnChain(amountHuman: string): Promise<{ txHash: `0
     const meta = await fetchStakingPoolMeta();
     const amountWei = parseUnits(amountHuman.trim(), meta.stakeDecimals);
     if (amountWei <= 0n) throw new Error('Amount must be greater than zero.');
-    const hash = await writeContract(wallet, {
-      address: poolAddr,
-      abi: stakingPoolAbi,
-      functionName: 'withdraw',
-      args: [amountWei],
-      maxFeePerGas: GAS.maxFeePerGas,
-      maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
-      gas: 200_000n,
-    });
+    const hash = await submitAmmTransaction(user, nonce =>
+      writeContract(wallet, {
+        address: poolAddr,
+        abi: stakingPoolAbi,
+        functionName: 'withdraw',
+        args: [amountWei],
+        nonce,
+        maxFeePerGas: GAS.maxFeePerGas,
+        maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+        gas: 200_000n,
+      }),
+    );
     const receipt = await waitForTransactionReceipt(config, { hash, chainId: CHAIN_ID });
     if (receipt.status !== 'success') throw new Error('Unstake transaction reverted.');
     return { txHash: hash };
@@ -229,15 +238,18 @@ export async function withdrawAllOnChain(): Promise<{ txHash: `0x${string}` }> {
   try {
     const raw = await fetchStakingUserRaw(user);
     if (raw.stakedWei <= 0n) throw new Error('Nothing staked to withdraw.');
-    const hash = await writeContract(wallet, {
-      address: poolAddr,
-      abi: stakingPoolAbi,
-      functionName: 'withdraw',
-      args: [raw.stakedWei],
-      maxFeePerGas: GAS.maxFeePerGas,
-      maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
-      gas: 200_000n,
-    });
+    const hash = await submitAmmTransaction(user, nonce =>
+      writeContract(wallet, {
+        address: poolAddr,
+        abi: stakingPoolAbi,
+        functionName: 'withdraw',
+        args: [raw.stakedWei],
+        nonce,
+        maxFeePerGas: GAS.maxFeePerGas,
+        maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+        gas: 200_000n,
+      }),
+    );
     const receipt = await waitForTransactionReceipt(config, { hash, chainId: CHAIN_ID });
     if (receipt.status !== 'success') throw new Error('Unstake transaction reverted.');
     return { txHash: hash };
@@ -265,14 +277,17 @@ export async function claimOnChain(): Promise<{ txHash: `0x${string}`; paidHuman
         `Minimum claim is ${STAKING_MIN_CLAIM_REWARD_HUMAN} ${meta.rewardSymbol}. Accrue more rewards first.`,
       );
     }
-    const hash = await writeContract(wallet, {
-      address: poolAddr,
-      abi: stakingPoolAbi,
-      functionName: 'claim',
-      maxFeePerGas: GAS.maxFeePerGas,
-      maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
-      gas: 200_000n,
-    });
+    const hash = await submitAmmTransaction(user, nonce =>
+      writeContract(wallet, {
+        address: poolAddr,
+        abi: stakingPoolAbi,
+        functionName: 'claim',
+        nonce,
+        maxFeePerGas: GAS.maxFeePerGas,
+        maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+        gas: 200_000n,
+      }),
+    );
     const receipt = await waitForTransactionReceipt(config, { hash, chainId: CHAIN_ID });
     if (receipt.status !== 'success') throw new Error('Claim transaction reverted.');
     let paidWei = 0n;

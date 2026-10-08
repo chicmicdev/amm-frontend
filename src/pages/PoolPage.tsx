@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import DataTable from '../components/common/DataTable';
@@ -175,6 +175,9 @@ export default function PoolPage() {
   const [stats, setStats] = useState<PoolStats | null>(null);
   const [loadingPool, setLoadingPool] = useState(false);
   const [loadingTx, setLoadingTx] = useState(false);
+  // React state updates are asynchronous, so loadingTx alone cannot prevent
+  // two clicks in the same render frame from starting overlapping workflows.
+  const txInFlightRef = useRef(false);
   const [balance0, setBalance0] = useState('0');
   const [balance1, setBalance1] = useState('0');
   /** When true, mint uses max usable ticks for this fee tier (matches common "full range"). */
@@ -360,9 +363,9 @@ export default function PoolPage() {
     if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo <= 0 || hi <= 0 || lo >= hi) {
       return { tickLower: 0, tickUpper: 0, ticksReady: false as const };
     }
-    const r = getTickRange(fee, lo, hi);
+    const r = getTickRange(fee, lo, hi, token0, token1);
     return { tickLower: r.tickLower, tickUpper: r.tickUpper, ticksReady: true as const };
-  }, [fullRange, tickSpacing, fee, priceLower, priceUpper]);
+  }, [fullRange, tickSpacing, fee, priceLower, priceUpper, token0, token1]);
 
   const currentPrice = linkPrice ?? 1;
   const pl = parseFloat(priceLower);
@@ -382,6 +385,7 @@ export default function PoolPage() {
   };
 
   const handleAddLiquidity = async () => {
+    if (txInFlightRef.current) return;
     if (!isConnected) { open(); return; }
     if (!amount0 || !amount1) return;
     if (!rangePricesValid) {
@@ -392,6 +396,7 @@ export default function PoolPage() {
       showToast('error', 'Invalid ticks for this range. Widen min/max price or use Full range.');
       return;
     }
+    txInFlightRef.current = true;
     setLoadingTx(true);
     try {
       if (needBootstrap) {
@@ -443,6 +448,7 @@ export default function PoolPage() {
     } catch (err) {
       showToast('error', resolveError(err));
     } finally {
+      txInFlightRef.current = false;
       setLoadingTx(false);
     }
   };
