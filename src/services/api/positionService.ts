@@ -32,7 +32,7 @@ import { tickToPrice, isInRange } from "../../utils/tickUtils";
 import { devLog, devError } from "../../utils/devLog";
 import { collectViemErrorText } from "../../utils/viemErrors";
 import { positionTokenAmounts, readPoolSlot0 } from "./poolService";
-import { ammWagmiConfig, getPublicClient, getHistoryPublicClient } from "./ammClient";
+import { ammWagmiConfig, getPublicClient, getHistoryPublicClient, submitAmmTransaction } from "./ammClient";
 import { fetchTokenDecimals, mergeTokenDecimals } from "./tokenMetadata";
 
 const config = ammWagmiConfig;
@@ -60,6 +60,11 @@ const config = ammWagmiConfig;
 
 function normalizeMintError(err: unknown): Error {
   const text = collectViemErrorText(err);
+  if (/nonce too low/i.test(text)) {
+    return new Error(
+      "Your wallet nonce is temporarily out of sync. A preceding approval may already have succeeded; refresh or reconnect the wallet, then retry. The app will not auto-retry mint because that could create a duplicate position."
+    );
+  }
   if (/Invalid token ID/i.test(text)) {
     return new Error(
       "Mint reverted with Invalid token ID — common cause is NonfungiblePositionManager `mint` reading `positions(tokenId)` before the position is stored. Use an NPM deployment that reads fee growth from the pool position, or adjust mint ordering in Solidity outside this workspace (contracts here are not edited per project rules)."
@@ -405,15 +410,18 @@ export async function addLiquidity(
         need: need.toString(),
         allowance: allowance.toString(),
       });
-      const approveHash = await writeContract(walletClient, {
-        address: t.address as Address,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [CONTRACTS.NonfungiblePositionManager as Address, maxUint256],
-        gas: GAS.limits.approve,
-        maxFeePerGas: GAS.maxFeePerGas,
-        maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
-      });
+      const approveHash = await submitAmmTransaction(user, nonce =>
+        writeContract(walletClient, {
+          address: t.address as Address,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [CONTRACTS.NonfungiblePositionManager as Address, maxUint256],
+          nonce,
+          gas: GAS.limits.approve,
+          maxFeePerGas: GAS.maxFeePerGas,
+          maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+        }),
+      );
       const ar = await waitForTransactionReceipt(config, {
         hash: approveHash,
         chainId: CHAIN_ID,
@@ -461,7 +469,9 @@ export async function addLiquidity(
       maxFeePerGas: GAS.maxFeePerGas,
       maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
     });
-    hash = await walletClient.writeContract(request);
+    hash = await submitAmmTransaction(user, nonce =>
+      walletClient.writeContract({ ...request, nonce }),
+    );
     devLog("tx/mint", "submitted", { hash });
     const receipt = await waitForTransactionReceipt(config, {
       hash,
@@ -534,23 +544,26 @@ export async function removeLiquidity(
     liqRemove: liqRemove.toString(),
     deadline: deadline.toString(),
   });
-  const decHash = await writeContract(walletClient, {
-    address: CONTRACTS.NonfungiblePositionManager as Address,
-    abi: positionManagerAbi,
-    functionName: "decreaseLiquidity",
-    args: [
-      {
-        tokenId: BigInt(tokenId),
-        liquidity: liqRemove,
-        amount0Min: 0n,
-        amount1Min: 0n,
-        deadline,
-      },
-    ],
-    gas: GAS.limits.decreaseLiquidity,
-    maxFeePerGas: GAS.maxFeePerGas,
-    maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
-  });
+  const decHash = await submitAmmTransaction(user, nonce =>
+    writeContract(walletClient, {
+      address: CONTRACTS.NonfungiblePositionManager as Address,
+      abi: positionManagerAbi,
+      functionName: "decreaseLiquidity",
+      args: [
+        {
+          tokenId: BigInt(tokenId),
+          liquidity: liqRemove,
+          amount0Min: 0n,
+          amount1Min: 0n,
+          deadline,
+        },
+      ],
+      nonce,
+      gas: GAS.limits.decreaseLiquidity,
+      maxFeePerGas: GAS.maxFeePerGas,
+      maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+    }),
+  );
   const decRc = await waitForTransactionReceipt(config, {
     hash: decHash,
     chainId: CHAIN_ID,
@@ -561,22 +574,25 @@ export async function removeLiquidity(
   });
 
   devLog("tx/remove", "collect", { tokenId });
-  const collectHash = await writeContract(walletClient, {
-    address: CONTRACTS.NonfungiblePositionManager as Address,
-    abi: positionManagerAbi,
-    functionName: "collect",
-    args: [
-      {
-        tokenId: BigInt(tokenId),
-        recipient: user,
-        amount0Max: 2n ** 128n - 1n,
-        amount1Max: 2n ** 128n - 1n,
-      },
-    ],
-    gas: GAS.limits.collect,
-    maxFeePerGas: GAS.maxFeePerGas,
-    maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
-  });
+  const collectHash = await submitAmmTransaction(user, nonce =>
+    writeContract(walletClient, {
+      address: CONTRACTS.NonfungiblePositionManager as Address,
+      abi: positionManagerAbi,
+      functionName: "collect",
+      args: [
+        {
+          tokenId: BigInt(tokenId),
+          recipient: user,
+          amount0Max: 2n ** 128n - 1n,
+          amount1Max: 2n ** 128n - 1n,
+        },
+      ],
+      nonce,
+      gas: GAS.limits.collect,
+      maxFeePerGas: GAS.maxFeePerGas,
+      maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+    }),
+  );
   const colRc = await waitForTransactionReceipt(config, {
     hash: collectHash,
     chainId: CHAIN_ID,
@@ -598,15 +614,18 @@ export async function removeLiquidity(
     const owed1 = after[11];
     if (liqLeft === 0n && owed0 === 0n && owed1 === 0n) {
       devLog("tx/remove", "burn", { tokenId });
-      const burnHash = await writeContract(walletClient, {
-        address: CONTRACTS.NonfungiblePositionManager as Address,
-        abi: positionManagerAbi,
-        functionName: "burn",
-        args: [BigInt(tokenId)],
-        gas: GAS.limits.burn,
-        maxFeePerGas: GAS.maxFeePerGas,
-        maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
-      });
+      const burnHash = await submitAmmTransaction(user, nonce =>
+        writeContract(walletClient, {
+          address: CONTRACTS.NonfungiblePositionManager as Address,
+          abi: positionManagerAbi,
+          functionName: "burn",
+          args: [BigInt(tokenId)],
+          nonce,
+          gas: GAS.limits.burn,
+          maxFeePerGas: GAS.maxFeePerGas,
+          maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+        }),
+      );
       const burnRc = await waitForTransactionReceipt(config, {
         hash: burnHash,
         chainId: CHAIN_ID,
@@ -627,26 +646,30 @@ export async function collectFees(
   recipientAddress: string,
 ): Promise<{ hash: string }> {
   const walletClient = await getWalletClient(config, { chainId: CHAIN_ID });
-  if (!walletClient)
+  const { address: user } = getAccount(config);
+  if (!walletClient || !user)
     throw new Error(`Connect a wallet on the AMM network (chain ${CHAIN_ID}).`);
 
   devLog("tx/collect", "collect", { tokenId, recipientAddress });
-  const hash = await writeContract(walletClient, {
-    address: CONTRACTS.NonfungiblePositionManager as Address,
-    abi: positionManagerAbi,
-    functionName: "collect",
-    args: [
-      {
-        tokenId: BigInt(tokenId),
-        recipient: recipientAddress as Address,
-        amount0Max: 2n ** 128n - 1n,
-        amount1Max: 2n ** 128n - 1n,
-      },
-    ],
-    gas: GAS.limits.collect,
-    maxFeePerGas: GAS.maxFeePerGas,
-    maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
-  });
+  const hash = await submitAmmTransaction(user, nonce =>
+    writeContract(walletClient, {
+      address: CONTRACTS.NonfungiblePositionManager as Address,
+      abi: positionManagerAbi,
+      functionName: "collect",
+      args: [
+        {
+          tokenId: BigInt(tokenId),
+          recipient: recipientAddress as Address,
+          amount0Max: 2n ** 128n - 1n,
+          amount1Max: 2n ** 128n - 1n,
+        },
+      ],
+      nonce,
+      gas: GAS.limits.collect,
+      maxFeePerGas: GAS.maxFeePerGas,
+      maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+    }),
+  );
   const cr = await waitForTransactionReceipt(config, {
     hash,
     chainId: CHAIN_ID,
@@ -697,15 +720,18 @@ export async function increaseLiquidity(
       args: [user, CONTRACTS.NonfungiblePositionManager as Address],
     })) as bigint;
     if (allowance < amt) {
-      const approveHash = await writeContract(walletClient, {
-        address: addr,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [CONTRACTS.NonfungiblePositionManager as Address, maxUint256],
-        gas: GAS.limits.approve,
-        maxFeePerGas: GAS.maxFeePerGas,
-        maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
-      });
+      const approveHash = await submitAmmTransaction(user, nonce =>
+        writeContract(walletClient, {
+          address: addr,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [CONTRACTS.NonfungiblePositionManager as Address, maxUint256],
+          nonce,
+          gas: GAS.limits.approve,
+          maxFeePerGas: GAS.maxFeePerGas,
+          maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+        }),
+      );
       await waitForTransactionReceipt(config, {
         hash: approveHash,
         chainId: CHAIN_ID,
@@ -718,24 +744,27 @@ export async function increaseLiquidity(
     tokenId,
     deadline: deadline.toString(),
   });
-  const hash = await writeContract(walletClient, {
-    address: CONTRACTS.NonfungiblePositionManager as Address,
-    abi: positionManagerAbi,
-    functionName: "increaseLiquidity",
-    args: [
-      {
-        tokenId: BigInt(tokenId),
-        amount0Desired: amt0,
-        amount1Desired: amt1,
-        amount0Min: 0n,
-        amount1Min: 0n,
-        deadline,
-      },
-    ],
-    gas: GAS.limits.increaseLiquidity,
-    maxFeePerGas: GAS.maxFeePerGas,
-    maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
-  });
+  const hash = await submitAmmTransaction(user, nonce =>
+    writeContract(walletClient, {
+      address: CONTRACTS.NonfungiblePositionManager as Address,
+      abi: positionManagerAbi,
+      functionName: "increaseLiquidity",
+      args: [
+        {
+          tokenId: BigInt(tokenId),
+          amount0Desired: amt0,
+          amount1Desired: amt1,
+          amount0Min: 0n,
+          amount1Min: 0n,
+          deadline,
+        },
+      ],
+      nonce,
+      gas: GAS.limits.increaseLiquidity,
+      maxFeePerGas: GAS.maxFeePerGas,
+      maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+    }),
+  );
   const ir = await waitForTransactionReceipt(config, {
     hash,
     chainId: CHAIN_ID,

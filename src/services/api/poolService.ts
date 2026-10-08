@@ -24,7 +24,7 @@ import { getSqrtRatioAtTick } from '../../utils/tickMath';
 import { devLog, devError } from '../../utils/devLog';
 import { collectViemErrorText } from '../../utils/viemErrors';
 import { formatBigintTokenAmount } from '../../utils/formatUtils';
-import { ammWagmiConfig, getPublicClient } from './ammClient';
+import { ammWagmiConfig, getPublicClient, submitAmmTransaction } from './ammClient';
 import { fetchTokenDecimals, mergeTokenDecimals } from './tokenMetadata';
 
 const config = ammWagmiConfig;
@@ -101,7 +101,9 @@ async function writeApproveWithSimulation(
       maxFeePerGas: GAS.maxFeePerGas,
       maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
     });
-    const hash = await walletClient.writeContract(request);
+    const hash = await submitAmmTransaction(account, nonce =>
+      walletClient.writeContract({ ...request, nonce }),
+    );
     const receipt = await waitForTransactionReceipt(config, { hash, chainId: CHAIN_ID });
     if (receipt.status !== 'success') {
       throw new Error('Approve transaction reverted on-chain.');
@@ -216,14 +218,17 @@ export async function ensurePoolCreatedAndInitialized(
 
   if (!poolAddr || poolAddr === zeroAddress) {
     devLog('tx/pool', 'createPool', { tokenA, tokenB, fee });
-    const hash = await writeContract(wallet, {
-      address: CONTRACTS.Factory as Address,
-      abi: factoryAbi,
-      functionName: 'createPool',
-      args: [tokenA as Address, tokenB as Address, fee],
-      maxFeePerGas: GAS.maxFeePerGas,
-      maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
-    });
+    const hash = await submitAmmTransaction(user, nonce =>
+      writeContract(wallet, {
+        address: CONTRACTS.Factory as Address,
+        abi: factoryAbi,
+        functionName: 'createPool',
+        args: [tokenA as Address, tokenB as Address, fee],
+        nonce,
+        maxFeePerGas: GAS.maxFeePerGas,
+        maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+      }),
+    );
     await waitForTransactionReceipt(config, { hash, chainId: CHAIN_ID });
     devLog('tx/pool', 'createPool confirmed', { hash });
     poolAddr = (await readContract(pc, {
@@ -242,14 +247,17 @@ export async function ensurePoolCreatedAndInitialized(
 
   if (slot0[0] === 0n) {
     devLog('tx/pool', 'initialize', { poolAddr, sqrtPriceX96: sqrtPriceX96.toString() });
-    const hash = await writeContract(wallet, {
-      address: poolAddr,
-      abi: poolAbi,
-      functionName: 'initialize',
-      args: [sqrtPriceX96],
-      maxFeePerGas: GAS.maxFeePerGas,
-      maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
-    });
+    const hash = await submitAmmTransaction(user, nonce =>
+      writeContract(wallet, {
+        address: poolAddr,
+        abi: poolAbi,
+        functionName: 'initialize',
+        args: [sqrtPriceX96],
+        nonce,
+        maxFeePerGas: GAS.maxFeePerGas,
+        maxPriorityFeePerGas: GAS.maxPriorityFeePerGas,
+      }),
+    );
     await waitForTransactionReceipt(config, { hash, chainId: CHAIN_ID });
     devLog('tx/pool', 'initialize confirmed', { hash });
   }
@@ -412,6 +420,16 @@ export async function executeSwap(params: SwapParams): Promise<{ hash: string }>
 
   devLog('tx/swap', 'spot quote (UI only)', { amountInWei: amountInWei.toString(), quote });
 
+  // `liquidity()` is active liquidity at the current tick, not the sum of all
+  // deposited positions. Check it before requesting any token approval so an
+  // out-of-range pool cannot cause a needless wallet transaction.
+  const poolForLiq = await getPool(tokenIn.address, tokenOut.address, params.fee);
+  if (poolForLiq && BigInt(poolForLiq.liquidity) === 0n) {
+    throw new Error(
+      'This pool has no active liquidity at the current price. Add an in-range or Full Range position before swapping.',
+    );
+  }
+
   const allowance = (await readContract(pc, {
     address: tokenIn.address as Address,
     abi: erc20Abi,
@@ -434,19 +452,6 @@ export async function executeSwap(params: SwapParams): Promise<{ hash: string }>
     }
     await writeApproveWithSimulation(walletClient, pc, user, tokenAddr, router, amountInWei);
     devLog('tx/swap', 'approve confirmed for exact swap amount', { amountInWei: amountInWei.toString() });
-  }
-
-  // Fail fast if the pool has no liquidity — the swap will always revert in that case.
-  const poolForLiq = await getPool(tokenIn.address, tokenOut.address, params.fee);
-  if (poolForLiq) {
-    const poolLiquidity = (await readContract(pc, {
-      address: poolForLiq.address as Address,
-      abi: poolAbi,
-      functionName: 'liquidity',
-    })) as bigint;
-    if (poolLiquidity === 0n) {
-      throw new Error('This pool has no liquidity. Add liquidity first before swapping.');
-    }
   }
 
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800);
@@ -506,7 +511,9 @@ export async function executeSwap(params: SwapParams): Promise<{ hash: string }>
       account: user,
       ...gasOverrides,
     });
-    hash = await walletClient.writeContract(request);
+    hash = await submitAmmTransaction(user, nonce =>
+      walletClient.writeContract({ ...request, nonce }),
+    );
   } catch (e) {
     devError('tx/swap', 'simulate/write exactInputSingle failed', e);
     throw normalizeSwapError(e);

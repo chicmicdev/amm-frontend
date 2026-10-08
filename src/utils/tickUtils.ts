@@ -1,4 +1,5 @@
 import { FEE_TO_TICK_SPACING, MAX_TICK, MIN_TICK } from '../config/contracts';
+import type { Token } from '../types';
 
 export function priceToTick(price: number): number {
   return Math.floor(Math.log(price) / Math.log(1.0001));
@@ -15,10 +16,35 @@ export function nearestUsableTick(tick: number, tickSpacing: number): number {
   return rounded;
 }
 
-export function getTickRange(fee: number, priceLower: number, priceUpper: number) {
+/**
+ * Convert a UI price range (tokenB per tokenA, in whole-token units) into the
+ * pool's canonical raw-unit ticks.
+ *
+ * Pool ticks always describe canonical token1 base units per token0 base unit.
+ * Human prices therefore need both decimal scaling and, when the selected UI
+ * order is reversed, reciprocal bounds.
+ */
+export function getTickRange(
+  fee: number,
+  priceLower: number,
+  priceUpper: number,
+  tokenA: Pick<Token, 'address' | 'decimals'>,
+  tokenB: Pick<Token, 'address' | 'decimals'>,
+) {
   const tickSpacing = FEE_TO_TICK_SPACING[fee] ?? 60;
-  const rawTickLower = priceToTick(priceLower);
-  const rawTickUpper = priceToTick(priceUpper);
+  const aIsCanonicalToken0 = tokenA.address.toLowerCase() < tokenB.address.toLowerCase();
+  const canonicalToken0 = aIsCanonicalToken0 ? tokenA : tokenB;
+  const canonicalToken1 = aIsCanonicalToken0 ? tokenB : tokenA;
+
+  // Inverting a range reverses its bounds: [lo, hi] -> [1 / hi, 1 / lo].
+  const canonicalHumanLower = aIsCanonicalToken0 ? priceLower : 1 / priceUpper;
+  const canonicalHumanUpper = aIsCanonicalToken0 ? priceUpper : 1 / priceLower;
+  const baseUnitScale = 10 ** (canonicalToken1.decimals - canonicalToken0.decimals);
+  const rawPriceLower = canonicalHumanLower * baseUnitScale;
+  const rawPriceUpper = canonicalHumanUpper * baseUnitScale;
+
+  const rawTickLower = priceToTick(rawPriceLower);
+  const rawTickUpper = priceToTick(rawPriceUpper);
   return {
     tickLower: nearestUsableTick(rawTickLower, tickSpacing),
     tickUpper: nearestUsableTick(rawTickUpper, tickSpacing),
