@@ -35,9 +35,12 @@ export function calcNetAPY(
   for (const r of reserves) {
     const s = parseFloat(supplyBals[r.asset] ?? '0');
     const d = parseFloat(debtBals[r.asset] ?? '0');
-    supplyIncome += s * (parseFloat(r.supplyAPY) / 100);
-    borrowCost += d * (parseFloat(r.borrowAPY) / 100);
-    totalSupply += s;
+    const priceUSD = parseFloat(r.priceUSD);
+    const supplyUSD = s * priceUSD;
+    const debtUSD = d * priceUSD;
+    supplyIncome += supplyUSD * (parseFloat(r.supplyAPY) / 100);
+    borrowCost += debtUSD * (parseFloat(r.borrowAPY) / 100);
+    totalSupply += supplyUSD;
   }
   if (totalSupply === 0) return fmt(0, 2);
   return fmt(((supplyIncome - borrowCost) / totalSupply) * 100, 2);

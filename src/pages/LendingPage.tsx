@@ -128,10 +128,32 @@ export default function LendingPage() {
     return () => { cancelled = true; };
   }, [address, isBaseSepolia, reserves]);
 
+  // aToken and debt-token balances accrue continuously. Poll while the market
+  // is visible so the dashboard and action modal do not disagree after a tx.
+  useEffect(() => {
+    if (!address || !isBaseSepolia || reserves.length === 0) return;
+    const timer = window.setInterval(() => {
+      void refreshUser();
+      void refreshBalances();
+    }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [address, isBaseSepolia, reserves.length, refreshUser, refreshBalances]);
+
   // ── Derived values ──────────────────────────────────────────────────────────
-  const netWorth = userData
-    ? fmt(parseFloat(userData.totalCollateralUSD) - parseFloat(userData.totalDebtUSD), 2)
-    : '—';
+  // Net worth includes every supplied asset, not only the subset currently
+  // counted by the protocol as collateral.
+  const suppliedUSD = reserves.reduce((sum, reserve) => {
+    const balance = parseFloat(supplyBals[reserve.asset] ?? '0');
+    const price = parseFloat(reserve.priceUSD);
+    return sum + (Number.isFinite(balance) && Number.isFinite(price) ? balance * price : 0);
+  }, 0);
+  const borrowedUSD = reserves.reduce((sum, reserve) => {
+    const balance = parseFloat(debtBals[reserve.asset] ?? '0');
+    const price = parseFloat(reserve.priceUSD);
+    return sum + (Number.isFinite(balance) && Number.isFinite(price) ? balance * price : 0);
+  }, 0);
+  const balanceMapsLoaded = Object.keys(supplyBals).length > 0 && Object.keys(debtBals).length > 0;
+  const netWorth = userData && balanceMapsLoaded ? fmt(suppliedUSD - borrowedUSD, 2) : '—';
 
   const netAPY = reserves.length > 0
     ? calcNetAPY(reserves, supplyBals, debtBals)

@@ -21,9 +21,12 @@ export function YourBorrows({ reserves, debtBals, userData, onAction }: YourBorr
 
   const borrowPct = userData
     ? (() => {
-        const debt = parseFloat(userData.totalDebtUSD);
-        const coll = parseFloat(userData.totalCollateralUSD);
-        return coll > 0 ? fmt((debt / coll) * 100, 2) : '0.00';
+        const debt = parseFloat(userData.totalDebtUSDFull ?? userData.totalDebtUSD);
+        const available = parseFloat(
+          userData.availableBorrowsUSDFull ?? userData.availableBorrowsUSD,
+        );
+        const totalCapacity = debt + available;
+        return totalCapacity > 0 ? fmt((debt / totalCapacity) * 100, 2) : '0.00';
       })()
     : '0.00';
 
@@ -31,8 +34,9 @@ export function YourBorrows({ reserves, debtBals, userData, onAction }: YourBorr
     let cost = 0, total = 0;
     for (const r of active) {
       const d = parseFloat(debtBals[r.asset] ?? '0');
-      cost  += d * (parseFloat(r.borrowAPY) / 100);
-      total += d;
+      const valueUSD = d * parseFloat(r.priceUSD);
+      cost  += valueUSD * (parseFloat(r.borrowAPY) / 100);
+      total += valueUSD;
     }
     return total > 0 ? fmt((cost / total) * 100, 2) : '0.00';
   })();

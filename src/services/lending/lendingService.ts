@@ -38,6 +38,7 @@ export interface UserAccountData {
    *  as zero and cause HealthFactorLowerThanLiquidationThreshold reverts. */
   totalCollateralUSDFull: string;
   totalDebtUSDFull:       string;
+  availableBorrowsUSDFull: string;
 }
 
 // RAY = 1e27 — pool stores rates in Ray units
@@ -176,8 +177,9 @@ export async function fetchUserAccountData(userAddress: `0x${string}`): Promise<
     liquidationThresholdRaw: Number(currentLiquidationThreshold) / 10000,
     // Full 8-decimal precision — do NOT round to 2 dp here, tiny debts like
     // $0.002273 must not become "0.00" in the max-safe-withdraw calculation.
-    totalCollateralUSDFull: Number(formatUnits(totalCollateralBase, 8)).toFixed(8),
-    totalDebtUSDFull:       Number(formatUnits(totalDebtBase, 8)).toFixed(8),
+    totalCollateralUSDFull: formatUnits(totalCollateralBase, 8),
+    totalDebtUSDFull:       formatUnits(totalDebtBase, 8),
+    availableBorrowsUSDFull: formatUnits(availableBorrowsBase, 8),
   };
 }
 

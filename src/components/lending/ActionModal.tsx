@@ -53,6 +53,10 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
     const addr = userAddress as `0x${string}`;
     let cancelled = false;
     setBalancesError(false);
+    setWalletWei(null);
+    setATokenWei(null);
+    setDebtWei(null);
+    setUserAccount(null);
     void (async () => {
       try {
         const [wRaw, aStr, dStr, uData] = await Promise.all([
@@ -96,6 +100,7 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
         return maxSafeWithdrawWei(aTokenWei, poolLiq, userAccount, reserve);
       }
       case 'borrow':
+        if (userAccount === null) return null;
         return maxBorrowWei(reserve, userAccount);
       case 'repay': {
         if (walletWei === null || debtWei === null) return null;
@@ -316,6 +321,16 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
             {maxWei !== null && maxWei > 0n && (
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
                 Maximum {formatWeiForAmountInput(maxWei, dec)} {reserve.symbol} (pool + your position limits)
+              </div>
+            )}
+            {mode === 'withdraw' && aTokenWei !== null && (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                Withdrawable balance includes interest accrued since supply.
+              </div>
+            )}
+            {mode === 'borrow' && userAccount !== null && (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                Borrow limit is based on remaining USD borrowing power, oracle price, and pool liquidity.
               </div>
             )}
             {maxWei !== null && maxWei <= 0n && (

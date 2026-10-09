@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { formatUnits } from 'viem';
 import type { ReserveInfo, UserAccountData } from '../../services/lending/lendingService';
 import type { ActionMode } from './lendingTypes';
 import { fmt } from './lendingUtils';
@@ -7,6 +8,7 @@ import { TokenIcon } from './TokenIcon';
 import { Btn } from './Btn';
 import { InfoIcon } from './Tooltip';
 import DataTable, { type ColumnConfig } from '../common/DataTable';
+import { maxBorrowWei } from './lendingMaxAmounts';
 
 interface AssetsToBorrowProps {
   reserves: ReserveInfo[];
@@ -18,16 +20,8 @@ function availableForUser(
   r: ReserveInfo,
   userData: UserAccountData | null,
 ): { tokens: number; usd: number } {
-  const poolTokens = parseFloat(r.availableLiquidity);
-  const price      = parseFloat(r.priceUSD);
-
-  if (!userData || price <= 0) {
-    return { tokens: poolTokens, usd: poolTokens * price };
-  }
-
-  const userBorrowUSD    = parseFloat(userData.availableBorrowsUSD);
-  const userBorrowTokens = userBorrowUSD / price;
-  const tokens           = Math.min(poolTokens, userBorrowTokens);
+  const price = parseFloat(r.priceUSD);
+  const tokens = Number.parseFloat(formatUnits(maxBorrowWei(r, userData), r.decimals));
   return { tokens, usd: tokens * price };
 }
 
@@ -107,8 +101,15 @@ export function AssetsToBorrow({ reserves, userData, onAction }: AssetsToBorrowP
       align: 'right',
       render: (_, row) => {
         const r = row.reserve as ReserveInfo;
+        const available = availableForUser(r, userData);
         return (
-          <Btn label="Borrow" color="#F89F1A" small onClick={() => onAction(r, 'borrow')} />
+          <Btn
+            label="Borrow"
+            color="#F89F1A"
+            small
+            disabled={!userData || available.tokens <= 0}
+            onClick={() => onAction(r, 'borrow')}
+          />
         );
       },
     },
