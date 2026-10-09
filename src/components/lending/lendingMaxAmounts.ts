@@ -86,13 +86,13 @@ export function borrowCapacityWei(
   priceUsdPerToken: string,
   decimals: number,
 ): bigint {
-  const usd = parseFloat(availableBorrowsUsd);
-  const px = parseFloat(priceUsdPerToken);
-  if (!Number.isFinite(usd) || !Number.isFinite(px) || px <= 0 || usd <= 0) return 0n;
-  const tokens = usd / px;
-  const s = tokens.toFixed(decimals);
   try {
-    return parseUnits(s as `${number}`, decimals);
+    // Both account base values and oracle prices use 8 decimals. Integer math
+    // floors the result, so UI rounding can never offer one wei too much.
+    const availableBase = parseUnits(availableBorrowsUsd as `${number}`, 8);
+    const priceBase = parseUnits(priceUsdPerToken as `${number}`, 8);
+    if (availableBase <= 0n || priceBase <= 0n) return 0n;
+    return (availableBase * 10n ** BigInt(decimals)) / priceBase;
   } catch {
     return 0n;
   }
@@ -105,8 +105,12 @@ export function maxBorrowWei(
 ): bigint {
   const dec = reserve.decimals;
   const pool = safeParseUnitsDecimal(reserve.availableLiquidity, dec);
-  if (!userData) return pool;
-  const cap = borrowCapacityWei(userData.availableBorrowsUSD, reserve.priceUSD, dec);
+  if (!userData) return 0n;
+  const cap = borrowCapacityWei(
+    userData.availableBorrowsUSDFull ?? userData.availableBorrowsUSD,
+    reserve.priceUSD,
+    dec,
+  );
   return minBigint(pool, cap);
 }
 

@@ -151,11 +151,24 @@ export function useLendingActions() {
     try {
       ensureCorrectChain();
       setStatus('pending'); setError(null);
+      const parsed = parseUnits(amount, decimals);
+      if (parsed <= 0n) throw new Error('Enter an amount greater than 0.');
+
+      // Revalidate against the protocol's latest collateral, oracle, and
+      // liquidity state before asking the wallet to sign.
+      await readClient.simulateContract({
+        address: LENDING_CONTRACTS.POOL,
+        abi: LENDING_POOL_ABI,
+        functionName: 'borrow',
+        args: [asset, parsed, BigInt(INTEREST_RATE_MODE.VARIABLE), REFERRAL_CODE, address as `0x${string}`],
+        account: address as `0x${string}`,
+      });
+
       const hash = await submitLendingTransaction(address as `0x${string}`, nonce =>
         walletClient.writeContract({
           address: LENDING_CONTRACTS.POOL, abi: LENDING_POOL_ABI,
           functionName: 'borrow',
-          args: [asset, parseUnits(amount, decimals), BigInt(INTEREST_RATE_MODE.VARIABLE), REFERRAL_CODE, address as `0x${string}`],
+          args: [asset, parsed, BigInt(INTEREST_RATE_MODE.VARIABLE), REFERRAL_CODE, address as `0x${string}`],
           nonce,
           gas: 500_000n,
         }),

@@ -18,14 +18,20 @@ interface YourSuppliesProps {
 export function YourSupplies({ reserves, balances, userData, onAction }: YourSuppliesProps) {
   const active = reserves.filter(r => parseFloat(balances[r.asset] ?? '0') > 0.0001);
 
-  const totalBal = userData ? fmt(parseFloat(userData.totalCollateralUSD), 2) : '0.00';
+  const totalSuppliedUSD = active.reduce((sum, r) => {
+    const balance = parseFloat(balances[r.asset] ?? '0');
+    const price = parseFloat(r.priceUSD);
+    return sum + (Number.isFinite(balance) && Number.isFinite(price) ? balance * price : 0);
+  }, 0);
+  const collateralUSD = userData ? fmt(parseFloat(userData.totalCollateralUSD), 2) : '0.00';
 
   const weightedAPY = (() => {
     let inc = 0, total = 0;
     for (const r of active) {
       const b = parseFloat(balances[r.asset] ?? '0');
-      inc   += b * (parseFloat(r.supplyAPY) / 100);
-      total += b;
+      const valueUSD = b * parseFloat(r.priceUSD);
+      inc   += valueUSD * (parseFloat(r.supplyAPY) / 100);
+      total += valueUSD;
     }
     return total > 0 ? fmt((inc / total) * 100, 2) : '0.00';
   })();
@@ -54,7 +60,7 @@ export function YourSupplies({ reserves, balances, userData, onAction }: YourSup
     },
     {
       key: 'balance',
-      label: 'Balance',
+      label: 'Supplied + interest',
       type: 'text',
       gridTrack: '1.2fr',
       render: (_, row) => {
@@ -138,7 +144,7 @@ export function YourSupplies({ reserves, balances, userData, onAction }: YourSup
       headerMeta={
         <div style={{ display: 'flex', gap: 20, fontSize: 12, color: 'var(--text-muted)' }}>
           <span>
-            Balance <strong style={{ color: 'var(--text-primary)' }}>${totalBal}</strong>
+            Balance <strong style={{ color: 'var(--text-primary)' }}>${fmt(totalSuppliedUSD, 2)}</strong>
           </span>
           <span style={{ display: 'flex', alignItems: 'center' }}>
             APY{' '}
@@ -147,7 +153,7 @@ export function YourSupplies({ reserves, balances, userData, onAction }: YourSup
           </span>
           <span style={{ display: 'flex', alignItems: 'center' }}>
             Collateral{' '}
-            <strong style={{ color: 'var(--text-primary)', marginLeft: 4 }}>${totalBal}</strong>
+            <strong style={{ color: 'var(--text-primary)', marginLeft: 4 }}>${collateralUSD}</strong>
             <InfoIcon tooltip="This is the total amount of your assets used as collateral. You can borrow against it." />
           </span>
         </div>
