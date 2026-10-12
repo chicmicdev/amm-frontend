@@ -38,14 +38,33 @@ function nextNonceFromError(error: unknown): number | undefined {
   return undefined;
 }
 
+function isNonceTooLowError(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  for (let depth = 0; depth < 8 && current && !seen.has(current); depth += 1) {
+    seen.add(current);
+    if (typeof current === 'object') {
+      const row = current as Record<string, unknown>;
+      for (const key of ['details', 'shortMessage', 'message']) {
+        if (typeof row[key] === 'string' && /nonce too low/i.test(row[key])) return true;
+      }
+      current = row.cause;
+      continue;
+    }
+    break;
+  }
+  return false;
+}
+
 /**
  * Serialize writes per account/chain and keep a monotonic local nonce floor.
  *
  * Some wallet/RPC combinations briefly return a stale `pending` transaction
  * count after a transaction is accepted. The local floor guarantees that the
  * next write in the same browser session cannot reuse the submitted nonce.
- * Transactions are never retried automatically: an ambiguous wallet/RPC error
- * must remain a user-visible failure to avoid duplicate financial actions.
+ * Transactions are never retried automatically for ambiguous wallet/RPC
+ * errors. A definitive "nonce too low" rejection is safe to retry once with
+ * the RPC-reported nonce because the original raw transaction was rejected.
  */
 export async function submitWithManagedNonce({
   account,
@@ -75,9 +94,21 @@ export async function submitWithManagedNonce({
       state.nextNonce = nonce + 1;
       return hash;
     } catch (error) {
-      // Preserve the RPC's authoritative floor for the next user-initiated
-      // attempt, but do not auto-resubmit this potentially ambiguous write.
+      // Preserve the RPC's authoritative floor. Only the definitive nonce
+      // rejection below is retried; all other errors remain user-visible.
       const reportedNextNonce = nextNonceFromError(error);
+      if (isNonceTooLowError(error) && reportedNextNonce !== undefined && reportedNextNonce > nonce) {
+        state.nextNonce = Math.max(state.nextNonce ?? 0, reportedNextNonce);
+        try {
+          const retryHash = await submit(reportedNextNonce);
+          state.nextNonce = reportedNextNonce + 1;
+          return retryHash;
+        } catch (retryError) {
+          const retryNonce = nextNonceFromError(retryError);
+          if (retryNonce !== undefined) state.nextNonce = Math.max(state.nextNonce ?? 0, retryNonce);
+          throw retryError;
+        }
+      }
       if (reportedNextNonce !== undefined) {
         state.nextNonce = Math.max(state.nextNonce ?? 0, reportedNextNonce);
       }
