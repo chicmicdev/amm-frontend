@@ -5,6 +5,7 @@ import { useWalletClient } from 'wagmi';
 import { useAppKitAccount } from '@reown/appkit/react';
 import { LENDING_CONTRACTS, INTEREST_RATE_MODE, REFERRAL_CODE, BASE_SEPOLIA_RPC, LENDING_CHAIN_ID } from '../config/lending';
 import { LENDING_POOL_ABI, ERC20_ABI } from '../contracts/lendingAbis';
+import { getTransactionCount } from 'viem/actions';
 import { submitWithManagedNonce } from '../services/api/transactionNonceManager';
 
 export type TxStatus = 'idle' | 'approving' | 'pending' | 'success' | 'error';
@@ -13,6 +14,7 @@ const readClient = createPublicClient({ chain: baseSepolia, transport: http(BASE
 
 function submitLendingTransaction(
   account: `0x${string}`,
+  walletClient: NonNullable<ReturnType<typeof useWalletClient>['data']>,
   submit: (nonce: number) => Promise<`0x${string}`>,
 ): Promise<`0x${string}`> {
   return submitWithManagedNonce({
@@ -20,8 +22,8 @@ function submitLendingTransaction(
     chainId: LENDING_CHAIN_ID,
     getNetworkNonce: async () => {
       const [latest, pending] = await Promise.all([
-        readClient.getTransactionCount({ address: account, blockTag: 'latest' }),
-        readClient.getTransactionCount({ address: account, blockTag: 'pending' }),
+        getTransactionCount(walletClient as Parameters<typeof getTransactionCount>[0], { address: account, blockTag: 'latest' }),
+        getTransactionCount(walletClient as Parameters<typeof getTransactionCount>[0], { address: account, blockTag: 'pending' }),
       ]);
       return Math.max(latest, pending);
     },
@@ -84,7 +86,7 @@ export function useLendingActions() {
     }) as bigint;
     if (allowance < amount) {
       setStatus('approving');
-      const hash = await submitLendingTransaction(address as `0x${string}`, nonce =>
+      const hash = await submitLendingTransaction(address as `0x${string}`, walletClient, nonce =>
         walletClient.writeContract({
           address: asset, abi: ERC20_ABI,
           functionName: 'approve',
@@ -131,7 +133,7 @@ export function useLendingActions() {
       });
 
       setStatus('pending');
-      const hash = await submitLendingTransaction(address as `0x${string}`, nonce =>
+      const hash = await submitLendingTransaction(address as `0x${string}`, walletClient, nonce =>
         walletClient.writeContract({
           address: LENDING_CONTRACTS.POOL, abi: LENDING_POOL_ABI,
           functionName: 'supply',
@@ -164,7 +166,7 @@ export function useLendingActions() {
         account: address as `0x${string}`,
       });
 
-      const hash = await submitLendingTransaction(address as `0x${string}`, nonce =>
+      const hash = await submitLendingTransaction(address as `0x${string}`, walletClient, nonce =>
         walletClient.writeContract({
           address: LENDING_CONTRACTS.POOL, abi: LENDING_POOL_ABI,
           functionName: 'borrow',
@@ -187,7 +189,7 @@ export function useLendingActions() {
       const parsed = parseUnits(amount, decimals);
       await ensureApproval(asset, parsed);
       setStatus('pending');
-      const hash = await submitLendingTransaction(address as `0x${string}`, nonce =>
+      const hash = await submitLendingTransaction(address as `0x${string}`, walletClient, nonce =>
         walletClient.writeContract({
           address: LENDING_CONTRACTS.POOL, abi: LENDING_POOL_ABI,
           functionName: 'repay',
@@ -211,7 +213,7 @@ export function useLendingActions() {
       // exact aToken amount internally — avoids off-by-one reverts caused by
       // interest accruing between balance-fetch and transaction execution.
       const amountArg = useMax ? maxUint256 : parseUnits(amount, decimals);
-      const hash = await submitLendingTransaction(address as `0x${string}`, nonce =>
+      const hash = await submitLendingTransaction(address as `0x${string}`, walletClient, nonce =>
         walletClient.writeContract({
           address: LENDING_CONTRACTS.POOL, abi: LENDING_POOL_ABI,
           functionName: 'withdraw',

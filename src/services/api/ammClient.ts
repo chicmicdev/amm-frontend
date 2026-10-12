@@ -7,7 +7,7 @@ import { createPublicClient, http } from 'viem';
 import type { Address } from 'viem';
 import { getTransactionCount } from 'viem/actions';
 import { polygonAmoy } from 'viem/chains';
-import { getPublicClient as wagmiGetPublicClient } from 'wagmi/actions';
+import { getPublicClient as wagmiGetPublicClient, getWalletClient } from 'wagmi/actions';
 import { wagmiAdapter } from '../../config/reown';
 import { CHAIN_ID } from '../../config/contracts';
 import { submitWithManagedNonce } from './transactionNonceManager';
@@ -52,16 +52,27 @@ export function getPublicClient() {
   return wagmiGetPublicClient(ammWagmiConfig, { chainId: CHAIN_ID }) ?? getFallbackPublicClient();
 }
 
-export function submitAmmTransaction(
+export async function submitAmmTransaction(
   account: Address,
   submit: (nonce: number) => Promise<`0x${string}`>,
 ): Promise<`0x${string}`> {
+  const walletClient = await getWalletClient(ammWagmiConfig, { chainId: CHAIN_ID });
   return submitWithManagedNonce({
     account,
     chainId: CHAIN_ID,
     getNetworkNonce: async () => {
-      // Use both views because providers may expose accepted transactions in
-      // `pending` before they are visible in `latest` (or vice versa briefly).
+      // Read through the same wallet transport that submits the raw
+      // transaction. A separate public RPC can lag behind the wallet RPC and
+      // return a nonce that the submission endpoint has already consumed.
+      if (walletClient) {
+        const [latest, pending] = await Promise.all([
+          getTransactionCount(walletClient, { address: account, blockTag: 'latest' }),
+          getTransactionCount(walletClient, { address: account, blockTag: 'pending' }),
+        ]);
+        return Math.max(latest, pending);
+      }
+
+      // Fallback for cold-load/provider hydration.
       const [latest, pending] = await Promise.all([
         getTransactionCount(getPublicClient(), { address: account, blockTag: 'latest' }),
         getTransactionCount(getPublicClient(), { address: account, blockTag: 'pending' }),
