@@ -1,5 +1,7 @@
 import { useCallback, useState } from 'react';
 import { parseUnits, formatUnits, maxUint256, createPublicClient, http } from 'viem';
+import { collectViemErrorText } from '../utils/viemErrors';
+import { getErrorMessage, isUserRejection } from '../utils/errors';
 import { baseSepolia } from 'viem/chains';
 import { useWalletClient } from 'wagmi';
 import { useAppKitAccount } from '@reown/appkit/react';
@@ -32,33 +34,20 @@ function submitLendingTransaction(
 }
 
 function parseError(e: unknown): string {
-  const msg = [
-    (e as { shortMessage?: string })?.shortMessage,
-    (e as { details?: string })?.details,
-    (e as { message?: string })?.message,
-  ]
-    .filter(Boolean)
-    .join(' | ');
-
-  if (/User rejected|User denied|denied transaction|rejected the request/i.test(msg)) {
-    return 'Transaction rejected by user.';
-  }
-  if (/insufficient funds/i.test(msg)) {
-    return 'Insufficient ETH for gas on Base Sepolia.';
-  }
+  const msg = collectViemErrorText(e);
+  if (isUserRejection(e)) return 'Transaction rejected by user.';
+  if (/insufficient funds/i.test(msg)) return 'Insufficient ETH for gas on Base Sepolia.';
   if (/HealthFactorLowerThanLiquidationThreshold/i.test(msg)) {
     return 'Withdrawal rejected: removing this collateral would push your health factor below 1. Repay your outstanding debt first, then withdraw.';
   }
   if (/exceeds max transaction gas limit/i.test(msg)) {
     return 'Transaction failed: gas estimate too high. Please try a smaller amount.';
   }
-  if (/reverted on-chain/i.test(msg)) {
-    return msg;
-  }
+  if (/reverted on-chain/i.test(msg)) return getErrorMessage(e);
   if (/Internal JSON-RPC error|InternalRpcError|execution reverted/i.test(msg)) {
     return 'Transaction reverted on-chain. Common causes: insufficient balance, reserve cap reached, paused reserve, or wrong network.';
   }
-  return msg || 'Transaction failed. Please try again.';
+  return getErrorMessage(e, 'Transaction failed. Please try again.');
 }
 
 export function useLendingActions() {

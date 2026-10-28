@@ -61,19 +61,13 @@ const config = ammWagmiConfig;
 function normalizeMintError(err: unknown): Error {
   const text = collectViemErrorText(err);
   if (/nonce too low/i.test(text)) {
-    return new Error(
-      "Your wallet nonce is temporarily out of sync. A preceding approval may already have succeeded; refresh or reconnect the wallet, then retry. The app will not auto-retry mint because that could create a duplicate position."
-    );
+    return new Error("Wallet is out of sync. Refresh and try again.");
   }
   if (/Invalid token ID/i.test(text)) {
-    return new Error(
-      "Mint reverted with Invalid token ID — common cause is NonfungiblePositionManager `mint` reading `positions(tokenId)` before the position is stored. Use an NPM deployment that reads fee growth from the pool position, or adjust mint ordering in Solidity outside this workspace (contracts here are not edited per project rules)."
-    );
+    return new Error("Could not add liquidity. Please try again.");
   }
   if (/Internal JSON-RPC error|InternalRpcError/i.test(text)) {
-    return new Error(
-      "RPC hid the revert reason. Common causes: token amounts do not match pool price (re-enter amounts after the pool loads), insufficient balance, or an invalid price band — try Full range. You can also switch Amoy RPC (VITE_POLYGON_AMOY_RPC)."
-    );
+    return new Error("Could not add liquidity. Check your amounts and price range.");
   }
   if (err instanceof Error) return err;
   return new Error(text || "Add liquidity failed");

@@ -6,10 +6,11 @@ import TokenInput from '../components/common/TokenInput';
 import SlippageSettings from '../components/swap/SlippageSettings';
 import type { Token, SwapQuote } from '../types';
 import { useTokens } from '../context/TokensContext';
-import { FEE_TIERS, CONTRACT_ERRORS } from '../config/contracts';
+import { FEE_TIERS } from '../config/contracts';
+import { getErrorMessage } from '../utils/errors';
 import { getSwapQuote, getTokenBalance, executeSwap } from '../services/api/poolService';
 import { useToast } from '../context/ToastContext';
-import { formatNumber, formatPercent, shortenTxHash } from '../utils/formatUtils';
+import { formatNumber, formatPercent } from '../utils/formatUtils';
 import { recordTxHistory } from '../services/history/txHistoryStorage';
 
 // ─── spring variants ────────────────────────────────────────────────────────
@@ -20,16 +21,6 @@ const cardSpring = {
   viewport: { once: true, margin: '-40px' },
   transition: { type: 'spring' as const, stiffness: 300, damping: 20 },
 };
-
-function resolveError(err: unknown): string {
-  const msg = (err as { reason?: string; message?: string })?.reason
-    || (err as { message?: string })?.message
-    || 'Transaction failed';
-  for (const [code, friendly] of Object.entries(CONTRACT_ERRORS)) {
-    if (msg.includes(code)) return friendly;
-  }
-  return msg;
-}
 
 function firstTokenOtherThan(list: Token[], addr: string): Token | undefined {
   const a = addr.toLowerCase();
@@ -256,14 +247,14 @@ export default function SwapPage() {
           summary: `Swapped ${amountIn} ${tokenIn.symbol} → ~${quote.amountOut} ${tokenOut.symbol}`,
         });
       }
-      showToast('success', `Swapped successfully! Tx: ${shortenTxHash(result.hash)}`);
+      showToast('success', 'Swap successful', { txHash: result.hash });
       setAmountIn('');
       setAmountOut('');
       setQuote(null);
       setQuoteHint(null);
       await refreshBalances();
     } catch (err) {
-      showToast('error', resolveError(err));
+      showToast('error', getErrorMessage(err, 'Transaction failed'));
     } finally {
       setLoadingSwap(false);
     }

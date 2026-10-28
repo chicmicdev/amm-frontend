@@ -44,9 +44,7 @@ function swapSlippageBps(slippagePercent: number): bigint {
 function normalizeSwapError(err: unknown): Error {
   const text = collectViemErrorText(err);
   if (/Internal JSON-RPC error|InternalRpcError/i.test(text)) {
-    return new Error(
-      'RPC hid the revert reason. Common fixes: raise slippage (try 3–5%), ensure the pool has liquidity, or set a different Amoy endpoint (VITE_POLYGON_AMOY_RPC) and retry.'
-    );
+    return new Error('Swap failed. Try a higher slippage or a smaller amount.');
   }
   if (/Too little received|STF|Insufficient output amount|IIA/i.test(text)) {
     return new Error(
@@ -54,9 +52,7 @@ function normalizeSwapError(err: unknown): Error {
     );
   }
   if (/execution reverted/i.test(text)) {
-    return new Error(
-      'Swap reverted on-chain. The pool likely has no liquidity for this pair, or the RPC did not return a reason. Verify liquidity exists for this pair and fee tier, or try a different RPC endpoint (VITE_POLYGON_AMOY_RPC).'
-    );
+    return new Error('Swap failed. The pool may not have enough liquidity.');
   }
   if (/User rejected|User denied|denied transaction|rejected the request|4001/i.test(text)) {
     return new Error('User rejected the request');
@@ -71,17 +67,13 @@ function normalizeApprovalError(err: unknown): Error {
     return new Error('Token approval was rejected in your wallet.');
   }
   if (/insufficient funds|insufficient balance|exceeds balance/i.test(text)) {
-    return new Error(
-      'Not enough Amoy POL for gas. Fund the wallet with testnet POL or switch RPC (VITE_POLYGON_AMOY_RPC) and retry.',
-    );
+    return new Error('Not enough POL to pay for gas.');
   }
   if (/Internal JSON-RPC error|InternalRpcError|execution reverted/i.test(text)) {
-    return new Error(
-      'ERC20 approve failed (often gas/RPC or a stuck allowance). Retry, or revoke the token for the router in your wallet then swap again.',
-    );
+    return new Error('Token approval failed. Please try again.');
   }
-  if (err instanceof Error) return new Error(`Token approval failed: ${err.message}`);
-  return new Error(text || 'Token approval failed');
+  if (err instanceof Error) return new Error('Token approval failed. Please try again.');
+  return new Error('Token approval failed. Please try again.');
 }
 
 /** Simulate then submit approve; waits for receipt so swap runs with updated allowance. */
@@ -204,8 +196,9 @@ export async function ensurePoolCreatedAndInitialized(
   tokenB: string,
   fee: number,
   sqrtPriceX96: bigint,
-): Promise<void> {
+): Promise<{ createHash?: `0x${string}`; initHash?: `0x${string}` }> {
   if (sqrtPriceX96 <= 0n) throw new Error('Starting price must be positive.');
+  const result: { createHash?: `0x${string}`; initHash?: `0x${string}` } = {};
 
   const pc = getPublicClient();
   const wallet = await getWalletClient(config, { chainId: CHAIN_ID });
@@ -234,6 +227,7 @@ export async function ensurePoolCreatedAndInitialized(
     );
     await waitForTransactionReceipt(config, { hash, chainId: CHAIN_ID });
     devLog('tx/pool', 'createPool confirmed', { hash });
+    result.createHash = hash;
     poolAddr = (await readContract(pc, {
       address: CONTRACTS.Factory as Address,
       abi: factoryAbi,
@@ -263,7 +257,9 @@ export async function ensurePoolCreatedAndInitialized(
     );
     await waitForTransactionReceipt(config, { hash, chainId: CHAIN_ID });
     devLog('tx/pool', 'initialize confirmed', { hash });
+    result.initHash = hash;
   }
+  return result;
 }
 
 export async function getAllPools(): Promise<Pool[]> {

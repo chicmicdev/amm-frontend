@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 import { getStakingStats, getUserPosition, postClaim } from '../../services/api/stakingService';
 import { canClaimStakingRewards, formatStakingNumber, STAKING_MIN_CLAIM_REWARD_HUMAN } from '../../utils/stakingFormat';
 import { Zap, Lock, Coins, HandCoins } from 'lucide-react';
+import { notifyTxSuccess } from '../../context/ToastContext';
+import { getErrorMessage } from '../../utils/errors';
 
 function formatTotalStaked(n: number, sym: string): string {
   if (!Number.isFinite(n)) return `— ${sym}`;
@@ -60,12 +62,12 @@ export default function StatsBar() {
     mutationFn: () => postClaim(address ?? ''),
     onSuccess: (data) => {
       const sym = position?.rewardSymbol ?? '';
-      toast.success(`Claimed ${formatStakingNumber(data.amount, 12)} ${sym}`.trim());
+      notifyTxSuccess(`Claimed ${formatStakingNumber(data.amount, 12)} ${sym}`.trim(), data.txHash);
       qc.invalidateQueries({ queryKey: ['userPosition'] });
       qc.invalidateQueries({ queryKey: ['stakingStats'] });
       qc.invalidateQueries({ queryKey: ['stakingPoolMeta'] });
     },
-    onError: (e: Error) => toast.error(e?.message ?? 'Claim failed.'),
+    onError: (e: Error) => toast.error(getErrorMessage(e, 'Claim failed.')),
   });
 
   const loading = statsLoading || posLoading;

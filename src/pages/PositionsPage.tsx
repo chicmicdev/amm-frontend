@@ -5,7 +5,8 @@ import { useAppKit } from '@reown/appkit/react';
 import type { Position } from '../types';
 import { getUserPositions, collectFees, removeLiquidity } from '../services/api/positionService';
 import { useToast } from '../context/ToastContext';
-import { formatNumber, shortenTxHash } from '../utils/formatUtils';
+import { formatNumber } from '../utils/formatUtils';
+import { getErrorMessage } from '../utils/errors';
 import { FEE_TIERS } from '../config/contracts';
 import { useNavigate } from 'react-router-dom';
 import { recordTxHistory } from '../services/history/txHistoryStorage';
@@ -214,7 +215,7 @@ export default function PositionsPage() {
       } catch (err) {
         if (!cancelled) {
           console.error('Failed to load positions:', err);
-          toastRef.current('error', (err as Error)?.message ?? 'Could not load positions');
+          toastRef.current('error', getErrorMessage(err, 'Could not load positions'));
           setPositions([]);
         }
       } finally {
@@ -234,11 +235,11 @@ export default function PositionsPage() {
       const pos = positions.find(p => p.tokenId === tokenId);
       const pair = pos ? `${pos.token0.symbol}/${pos.token1.symbol}` : `position #${tokenId}`;
       recordTxHistory(address, { hash: result.hash, kind: 'collect_fees', summary: `Collected fees · ${pair}` });
-      showToast('success', `Fees collected! Tx: ${shortenTxHash(result.hash)}`);
+      showToast('success', 'Fees collected', { txHash: result.hash });
       const updated = await getUserPositions(address);
       setPositions(updated.positions);
     } catch (err) {
-      showToast('error', (err as Error)?.message ?? 'Failed to collect fees');
+      showToast('error', getErrorMessage(err, 'Failed to collect fees'));
     } finally {
       setActionLoading(null);
     }
@@ -255,10 +256,10 @@ export default function PositionsPage() {
       if (address) {
         recordTxHistory(address, { hash: result.hash, kind: 'remove_liquidity', summary: `Removed liquidity · ${pair} · NFT #${tokenId}` });
       }
-      showToast('success', `Liquidity removed! Tx: ${shortenTxHash(result.hash)}`);
+      showToast('success', 'Liquidity removed', { txHash: result.hash });
       setPositions(prev => prev.filter(p => p.tokenId !== tokenId));
     } catch (err) {
-      showToast('error', (err as Error)?.message ?? 'Failed to remove liquidity');
+      showToast('error', getErrorMessage(err, 'Failed to remove liquidity'));
     } finally {
       setActionLoading(null);
     }

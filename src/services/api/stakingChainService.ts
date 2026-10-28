@@ -13,6 +13,7 @@ import { ammWagmiConfig, getPublicClient, submitAmmTransaction } from './ammClie
 import { STAKING_MIN_CLAIM_REWARD_HUMAN, STAKING_REWARD_MODE_APR } from '../../utils/stakingFormat';
 import { fetchTokenDecimals, fetchTokenSymbol } from './tokenMetadata';
 import { polygonAmoy } from 'viem/chains';
+import { getErrorMessage } from '../../utils/errors';
 
 const config = ammWagmiConfig;
 const poolAddr = CONTRACTS.StakingPool as Address;
@@ -135,8 +136,7 @@ function normalizeTxError(err: unknown, operation: string): Error {
   if (/User rejected|User denied|denied transaction/i.test(text)) {
     return new Error('Transaction was rejected in your wallet.');
   }
-  if (err instanceof Error) return new Error(text || err.message);
-  return new Error(text || 'Transaction failed');
+  return new Error(getErrorMessage(err, 'Transaction failed. Please try again.'));
 }
 
 async function ensureStakeAllowance(
