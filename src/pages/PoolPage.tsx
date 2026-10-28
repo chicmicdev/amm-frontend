@@ -23,6 +23,7 @@ import { useToast } from '../context/ToastContext';
 import { formatCompactUSD, formatNumber, shortenTxHash } from '../utils/formatUtils';
 import { recordTxHistory } from '../services/history/txHistoryStorage';
 import { getTickRange, maxRangeTicksForSpacing } from '../utils/tickUtils';
+import { TriangleAlert } from 'lucide-react';
 
 
 // ─── spring variants ────────────────────────────────────────────────────────
@@ -813,7 +814,7 @@ export default function PoolPage() {
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
           >
-            ⚠ No pool found for this pair and fee. Switch to <strong>New pool</strong> to deploy and seed it.
+            <TriangleAlert size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />No pool found for this pair and fee. Switch to <strong>New pool</strong> to deploy and seed it.
           </motion.div>
         )}
       </AnimatePresence>
@@ -927,7 +928,7 @@ export default function PoolPage() {
               transition={{ duration: 0.22 }}
               style={{ overflow: 'hidden' }}
             >
-              ⚠ Your position will not earn fees at the current price of {formatNumber(currentPrice, 4)}.
+              <TriangleAlert size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />Your position will not earn fees at the current price of {formatNumber(currentPrice, 4)}.
             </motion.div>
           )}
         </AnimatePresence>

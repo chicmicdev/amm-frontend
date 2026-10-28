@@ -58,6 +58,9 @@ function normalizeSwapError(err: unknown): Error {
       'Swap reverted on-chain. The pool likely has no liquidity for this pair, or the RPC did not return a reason. Verify liquidity exists for this pair and fee tier, or try a different RPC endpoint (VITE_POLYGON_AMOY_RPC).'
     );
   }
+  if (/User rejected|User denied|denied transaction|rejected the request|4001/i.test(text)) {
+    return new Error('User rejected the request');
+  }
   if (err instanceof Error) return err;
   return new Error(text || 'Swap failed');
 }
@@ -425,9 +428,7 @@ export async function executeSwap(params: SwapParams): Promise<{ hash: string }>
   // out-of-range pool cannot cause a needless wallet transaction.
   const poolForLiq = await getPool(tokenIn.address, tokenOut.address, params.fee);
   if (poolForLiq && BigInt(poolForLiq.liquidity) === 0n) {
-    throw new Error(
-      'This pool has no active liquidity at the current price. Add an in-range or Full Range position before swapping.',
-    );
+    throw new Error('Insufficient liquidity');
   }
 
   const allowance = (await readContract(pc, {

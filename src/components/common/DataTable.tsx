@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import toast from 'react-hot-toast';
+import { Copy, Inbox } from 'lucide-react';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,7 +62,7 @@ interface DataTableProps extends TableEvents {
   filters?: FilterOption[];
   activeFilter?: string;
   emptyText?: string;
-  emptyIcon?: string;
+  emptyIcon?: ReactNode;
   /**
    * When true, `data` is one page from the server (no client slice).
    * Set `totalRowCount` to the API total for pagination. Client-side sorting is skipped; use `onSort` to refetch.
@@ -130,7 +131,7 @@ function Cell({ col, value, row }: { col: ColumnConfig; value: unknown; row: Rec
           title={str}
         >
           {str.slice(0, 6)}…{str.slice(-4)}
-          <span style={{ fontSize: 11 }}>📋</span>
+          <Copy size={11} />
         </button>
       );
 
@@ -166,7 +167,7 @@ export default function DataTable({
   filters,
   activeFilter,
   emptyText = 'No data found',
-  emptyIcon = '📭',
+  emptyIcon = <Inbox size={32} strokeWidth={1.5} />,
   serverPaginated = false,
   totalRowCount,
   initialSort,
@@ -322,7 +323,7 @@ export default function DataTable({
             ) : paginated.length === 0 ? (
               <tr><td colSpan={columns.length}>
                 <div style={{ textAlign: 'center', padding: bare ? '28px 20px' : '40px', color: 'var(--text-secondary)' }}>
-                  {!bare && <div style={{ fontSize: 32, marginBottom: 8 }}>{emptyIcon}</div>}
+                  {!bare && <div style={{ display: 'flex', justifyContent: 'center', color: 'var(--text-secondary)', marginBottom: 8 }}>{emptyIcon}</div>}
                   <div style={{ fontSize: bare ? 13 : 14 }}>{emptyText}</div>
                 </div>
               </td></tr>

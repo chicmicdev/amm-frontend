@@ -1,3 +1,5 @@
+import { TriangleAlert } from 'lucide-react';
+
 interface Props {
   slippage: number;
   onChange: (value: number) => void;
@@ -63,12 +65,12 @@ export default function SlippageSettings({ slippage, onChange, onClose }: Props)
 
         {slippage > 5 && (
           <div className="warning-box">
-            ⚠ High slippage tolerance. Your transaction may be frontrun.
+            <TriangleAlert size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />High slippage tolerance. Your transaction may be frontrun.
           </div>
         )}
         {slippage < 0.05 && (
           <div className="warning-box">
-            ⚠ Very low slippage. Your transaction may fail.
+            <TriangleAlert size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />Very low slippage. Your transaction may fail.
           </div>
         )}
       </div>

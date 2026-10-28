@@ -5,6 +5,7 @@ import { getTxHistory, clearTxHistory } from '../services/history/txHistoryStora
 import { formatRelativeTime, shortenTxHash } from '../utils/formatUtils';
 import { getTxExplorerUrl } from '../utils/explorer';
 import { useToast } from '../context/ToastContext';
+import { Wallet, Inbox } from 'lucide-react';
 
 const FILTERS: { key: 'all' | TxHistoryKind; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -90,7 +91,7 @@ export default function HistoryPage() {
       <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', paddingBottom: 80 }}>
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px' }}>
           <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>📜</div>
+            <Wallet size={48} strokeWidth={1.5} style={{ color: 'var(--text-secondary)', margin: '0 auto 16px' }} />
             <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Connect Your Wallet</h2>
             <p style={{ color: 'var(--text-secondary)', marginBottom: 24, fontSize: 15 }}>
               Your Flux Swap activity will appear here after you swap or manage liquidity.
@@ -143,7 +144,7 @@ export default function HistoryPage() {
 
       {filtered.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
+          <Inbox size={40} strokeWidth={1.5} style={{ color: 'var(--text-secondary)', margin: '0 auto 12px' }} />
           <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
             {entries.length === 0 ? 'No activity yet' : 'Nothing in this filter'}
           </h3>

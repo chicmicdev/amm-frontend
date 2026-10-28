@@ -24,6 +24,7 @@ import {
 } from './lendingMaxAmounts';
 import type { ActionMode } from './lendingTypes';
 import { MODE_CFG } from './lendingTypes';
+import { TriangleAlert, Loader2 } from 'lucide-react';
 
 interface ActionModalProps {
   reserve: ReserveInfo;
@@ -414,7 +415,7 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
               fontSize: 12, color: 'var(--text-muted)', marginBottom: 14,
               display: 'flex', alignItems: 'center', gap: 5,
             }}>
-              ⛽ &lt; $0.01
+              Est. gas &lt; $0.01
             </div>
 
             {/* ── Borrow risk ───────────────────────────────────── */}
@@ -425,7 +426,7 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
                   borderRadius: 8, padding: '10px 12px', marginBottom: 10,
                   color: '#F44336', fontSize: 13, display: 'flex', gap: 8,
                 }}>
-                  <span>⚠</span>
+                  <TriangleAlert size={16} style={{ flexShrink: 0, marginTop: 1 }} />
                   <span>Borrowing this amount will reduce your health factor and increase risk of liquidation.</span>
                 </div>
                 <label style={{
@@ -449,7 +450,7 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
                     fontSize: 13, color: '#F89F1A',
                   }}
                 >
-                  ⏳ Approving token spend…
+                  <Loader2 size={14} className="icon-spin" style={{ verticalAlign: '-2px', marginRight: 6 }} />Approving token spend…
                 </motion.div>
               )}
               {status === 'pending' && (
@@ -461,7 +462,7 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
                     fontSize: 13, color: 'var(--color-accent-light)',
                   }}
                 >
-                  ⏳ Confirming transaction…
+                  <Loader2 size={14} className="icon-spin" style={{ verticalAlign: '-2px', marginRight: 6 }} />Confirming transaction…
                 </motion.div>
               )}
               {error && status === 'error' && (
@@ -473,7 +474,7 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
                     fontSize: 12, color: '#F44336', wordBreak: 'break-word',
                   }}
                 >
-                  ⚠ {error.slice(0, 200)}
+                  <TriangleAlert size={13} style={{ verticalAlign: '-2px', marginRight: 6 }} />{error.slice(0, 200)}
                   <button
                     onClick={reset}
                     style={{
@@ -513,7 +514,7 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
                   fontWeight: 700, fontSize: 15,
                 }}
               >
-                {isPending ? '⏳ Processing…' : `${cfg.label} ${reserve.symbol}`}
+                {isPending ? 'Processing…' : `${cfg.label} ${reserve.symbol}`}
               </motion.button>
             </div>
           </>
