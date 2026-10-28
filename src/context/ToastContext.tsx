@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import toast from 'react-hot-toast';
+import { Info } from 'lucide-react';
 
 export type ToastKind = 'success' | 'error' | 'info';
 
@@ -16,7 +17,7 @@ export function useToast() {
       toast.error(message, { duration: 7000 });
       return;
     }
-    toast(message, { duration: 4500, icon: 'ℹ️' });
+    toast(message, { duration: 4500, icon: <Info size={18} /> });
   }, []);
 
   return { showToast };

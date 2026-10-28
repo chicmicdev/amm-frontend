@@ -10,6 +10,7 @@ import { FEE_TIERS } from '../config/contracts';
 import { useNavigate } from 'react-router-dom';
 import { recordTxHistory } from '../services/history/txHistoryStorage';
 import TokenIcon from '../components/common/TokenIcon';
+import { Wallet, Inbox } from 'lucide-react';
 
 // ─── stagger container for the list ─────────────────────────────────────────
 const listVariants = {
@@ -140,7 +141,7 @@ function PositionCard({
               borderRadius: 10, padding: '12px 14px', marginBottom: 14,
             }}>
               <div style={{ fontSize: 12, color: hasFees ? 'var(--accent-secondary)' : 'var(--text-secondary)', marginBottom: 8, fontWeight: 500 }}>
-                Unclaimed Fees {hasFees ? '🎉' : ''}
+                Unclaimed Fees
               </div>
               {[
                 { symbol: position.token0.symbol, fee: position.unclaimedFees0 },
@@ -283,7 +284,7 @@ export default function PositionsPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ type: 'spring', stiffness: 280, damping: 22 }}
           >
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🔗</div>
+            <Wallet size={48} strokeWidth={1.5} style={{ color: 'var(--text-secondary)', margin: '0 auto 16px' }} />
             <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Connect Your Wallet</h2>
             <p style={{ color: 'var(--text-secondary)', marginBottom: 24, fontSize: 15 }}>
               Connect your wallet to view your liquidity positions.
@@ -463,7 +464,7 @@ export default function PositionsPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ type: 'spring', stiffness: 280, damping: 22 }}
         >
-          <div style={{ fontSize: 40, marginBottom: 12 }}>💧</div>
+          <Inbox size={40} strokeWidth={1.5} style={{ color: 'var(--text-secondary)', margin: '0 auto 12px' }} />
           <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
             {positions.length === 0 ? 'No positions yet' : 'No positions match this filter'}
           </h3>

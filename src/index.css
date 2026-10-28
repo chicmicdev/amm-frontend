@@ -208,19 +208,6 @@
   }
   .stake-input:focus { border-color: var(--color-accent); box-shadow: 0 0 0 2px var(--color-accent-dim); }
 
-  /* Navigation */
-  .nav-link {
-    color: var(--text-secondary);
-    text-decoration: none;
-    padding: 7px 16px;
-    border-radius: 999px;
-    font-weight: 500;
-    font-size: 14px;
-    transition: color 0.2s, background-color 0.2s;
-  }
-  .nav-link:hover { color: var(--text-primary); background-color: rgba(188,64,221,0.12); }
-  .nav-link.active { color: #fff; background-color: var(--color-accent); font-weight: 600; }
-
   /* Tabs */
   .tab {
     padding: 8px 20px;
@@ -360,6 +347,13 @@
     display: inline-block;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .zap-pulse-ring { position: absolute; inset: 0; display: inline-flex; animation: zapPulse 0.8s cubic-bezier(0.22, 0.61, 0.36, 1) infinite; will-change: transform, opacity; }
+  @keyframes zapPulse {
+    0%   { transform: scale(1);   opacity: 0.65; }
+    70%  { transform: scale(2);   opacity: 0; }
+    100% { transform: scale(2);   opacity: 0; }
+  }
+  .icon-spin { animation: spin 1s linear infinite; }
 
   .glow { box-shadow: var(--shadow-glow); }
 
@@ -494,26 +488,6 @@
     max-width: 520px;
     margin: 0 auto;
   }
-
-  .header-nav {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .hamburger-btn {
-    display: none;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    color: var(--text-primary);
-    padding: 6px;
-    border-radius: var(--radius-sm);
-    align-items: center;
-    justify-content: center;
-    transition: background 0.2s;
-  }
-  .hamburger-btn:hover { background: var(--bg-secondary); }
 
   .grid-2col {
     display: grid;
@@ -694,9 +668,6 @@
 }
 
 @media (max-width: 768px) {
-  .header-nav  { display: none; }
-  .hamburger-btn { display: flex; }
-
   .grid-2col { grid-template-columns: 1fr; }
   .grid-3col { grid-template-columns: 1fr 1fr; }
 
@@ -757,6 +728,35 @@
   display: flex;
   align-items: center;
   gap: clamp(16px, 3vw, 32px);
+}
+
+.landing-nav-links a {
+  color: #9ca3af;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.landing-nav-links a:hover {
+  color: #f9fafb;
+}
+
+.landing-nav-links a.active {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.landing-nav-drawer-links a.active {
+  background: rgba(188, 64, 221, 0.16);
+  color: #ffffff;
+}
+
+/* On mobile the network is shown inside the drawer instead */
+@media (max-width: 768px) {
+  .header-network-pill {
+    display: none !important;
+  }
 }
 
 .landing-nav-toggle {
@@ -1115,10 +1115,31 @@
 }
 
 @media (max-width: 640px) {
+  .landing-footer-pad {
+    padding-top: 28px;
+    padding-bottom: max(28px, env(safe-area-inset-bottom, 0px));
+  }
+
   .landing-footer-inner {
     flex-direction: column;
+    align-items: center;
     text-align: center;
     justify-content: center;
+    gap: 16px;
+  }
+
+  .landing-footer-links {
+    width: 100%;
+    gap: 8px 4px;
+  }
+
+  .landing-footer-links a {
+    padding: 10px 14px;
+  }
+
+  .landing-footer-inner > span {
+    max-width: 280px;
+    line-height: 1.5;
   }
 
   .landing-how-step {
@@ -1160,3 +1181,9 @@
     font-size: 12px !important;
   }
 }
+
+/* ── Scrollbars ────────────────────────────────────────────────────────────── */
+* { scrollbar-width: thin; scrollbar-color: var(--text-muted) transparent; }
+
+/* Landing page: no scrollbar (still scrollable) */
+html.hide-scrollbar, html.hide-scrollbar * { scrollbar-width: none; }

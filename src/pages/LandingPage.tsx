@@ -9,6 +9,7 @@ import {
   useMotionValue,
 } from 'framer-motion';
 import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
+import { Zap } from 'lucide-react';
 import TiltCard from '../components/common/TiltCard';
 import { formatAddress } from '../utils/formatUtils';
 
@@ -254,7 +255,7 @@ function Nav() {
           display: 'flex', alignItems: 'center',
           backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
           background: scrolled ? 'rgba(10,14,26,0.88)' : 'transparent',
-          borderBottom: scrolled ? '1px solid rgba(55,65,100,0.4)' : 'none',
+          borderBottom: `1px solid ${scrolled ? 'rgba(55,65,100,0.4)' : 'transparent'}`,
           transition: 'background 0.3s, border-color 0.3s',
         }}
       >
@@ -281,7 +282,7 @@ function Nav() {
             <motion.button
               type="button"
               className="landing-nav-connect"
-              whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+              whileHover={{ scale: 1.04, transition: { duration: 0.15, ease: 'easeOut' } }} whileTap={{ scale: 0.97 }}
               onClick={() => open()}
               style={{
                 background: isConnected ? 'rgba(8,11,20,0.8)' : '#BC40DD',
@@ -394,14 +395,14 @@ function Hero() {
         {/* ── Left: copy ── */}
         <motion.div className="landing-hero-copy" style={{ y: textY, opacity: textOp }}>
           <motion.div initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5, delay: 0.1 }} style={{ marginBottom: 28 }}>
-            <span style={{ background: 'rgba(188,64,221,0.14)', border: '1px solid rgba(188,64,221,0.34)', color: '#CE6DE4', borderRadius: 999, padding: '6px 16px', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>
-              <motion.span
-              animate={{ boxShadow: ['0 0 0px rgba(99,102,241,0)', '0 0 18px rgba(99,102,241,0.55)', '0 0 0px rgba(99,102,241,0)'] }}
-              transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
-              style={{ display: 'inline-block', background: 'rgba(99,102,241,0.14)', border: '1px solid rgba(99,102,241,0.34)', color: '#818cf8', borderRadius: 999, padding: '6px 16px', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}
-            >
-              ⚡ NOW LIVE ON TESTNET
-            </motion.span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(99,102,241,0.14)', border: '1px solid rgba(99,102,241,0.34)', color: '#818cf8', borderRadius: 999, padding: '6px 16px', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>
+              <span style={{ position: 'relative', display: 'inline-flex' }}>
+                <span className="zap-pulse-ring">
+                  <Zap size={13} />
+                </span>
+                <Zap size={13} />
+              </span>
+              NOW LIVE ON TESTNET
             </span>
           </motion.div>
 
@@ -432,7 +433,7 @@ function Hero() {
             style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
             <Link to="/stake">
               <motion.div
-                whileHover={{ scale: 1.05, boxShadow: '0 0 36px rgba(188,64,221,0.55)' }} whileTap={{ scale: 0.97 }}
+                whileHover={{ scale: 1.05, boxShadow: '0 0 36px rgba(188,64,221,0.55)', transition: { duration: 0.15, ease: 'easeOut' } }} whileTap={{ scale: 0.97 }}
                 animate={{ boxShadow: ['0 0 20px rgba(99,102,241,0.3)', '0 0 48px rgba(99,102,241,0.7)', '0 0 20px rgba(99,102,241,0.3)'] }}
                 transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
                 style={{ display: 'inline-block', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 'none', borderRadius: 14, padding: '14px 34px', fontSize: 16, fontWeight: 800, cursor: 'pointer', textDecoration: 'none' }}
@@ -440,7 +441,7 @@ function Hero() {
                 Launch App →
               </motion.div>
             </Link>
-            <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+            <motion.button whileHover={{ scale: 1.04, transition: { duration: 0.15, ease: 'easeOut' } }} whileTap={{ scale: 0.97 }}
               onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
               style={{ background: 'transparent', color: '#e6edf3', border: '1px solid rgba(188,64,221,0.35)', borderRadius: 999, padding: '14px 34px', fontSize: 16, fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(8px)', transition: 'border-color 0.2s' }}>
               Explore
@@ -702,7 +703,6 @@ function CTAAndFooter() {
           </motion.div>
           <motion.h2 variants={fadeUp} style={{ fontSize: 'clamp(28px,5vw,58px)', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.04em', margin: '0 0 20px', color: '#e6edf3' }}>
             Your yield.{' '}
-            <span style={{ background: 'linear-gradient(135deg,#BC40DD,#A855F7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Your rules.</span>
             <span className="landing-gradient-text-animated">Your rules.</span>
           </motion.h2>
           <motion.p variants={fadeUp} style={{ fontSize: 17, color: '#9ca3af', margin: '0 0 40px', lineHeight: 1.65 }}>
@@ -714,14 +714,14 @@ function CTAAndFooter() {
                 <motion.button
                   animate={{ boxShadow: ['0 0 20px rgba(99,102,241,0.3)', '0 0 48px rgba(99,102,241,0.7)', '0 0 20px rgba(188,64,221,0.3)'] }}
                   transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-                  whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+                  whileHover={{ scale: 1.04, transition: { duration: 0.15, ease: 'easeOut' } }} whileTap={{ scale: 0.97 }}
                   style={{ background: '#BC40DD', color: '#fff', border: 'none', borderRadius: 999, padding: '16px 40px', fontSize: 16, fontWeight: 800, cursor: 'pointer' }}>
                   Start Earning →
                 </motion.button>
               </TiltCard>
             </Link>
             <Link to="/swap">
-              <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+              <motion.button whileHover={{ scale: 1.04, transition: { duration: 0.15, ease: 'easeOut' } }} whileTap={{ scale: 0.97 }}
                 style={{ background: 'var(--bg-secondary)', color: '#e6edf3', border: '1px solid rgba(188,64,221,0.35)', borderRadius: 999, padding: '16px 40px', fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
                 Try Swapping
               </motion.button>
@@ -762,6 +762,11 @@ function CTAAndFooter() {
 
 /* ─── Page ───────────────────────────────────────────────────────────────── */
 export default function LandingPage() {
+  useEffect(() => {
+    document.documentElement.classList.add('hide-scrollbar');
+    return () => document.documentElement.classList.remove('hide-scrollbar');
+  }, []);
+
   return (
     <div className="landing-page-root" style={{ background: 'var(--bg-primary)', minHeight: '100vh' }}>
       <ScrollProgressBar />

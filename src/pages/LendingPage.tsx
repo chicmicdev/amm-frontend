@@ -24,6 +24,7 @@ import { AssetsToBorrow } from '../components/lending/AssetsToBorrow';
 import { ActionModal }    from '../components/lending/ActionModal';
 import { RiskModal }      from '../components/lending/RiskModal';
 import { Btn }            from '../components/lending/Btn';
+import { TriangleAlert, Lock } from 'lucide-react';
 
 /** Fetches supply / debt / wallet maps; used by the balance effect and manual refresh. */
 async function fetchLendingBalanceMaps(
@@ -206,7 +207,7 @@ export default function LendingPage() {
               }}
             >
               <div>
-                <div style={{ fontWeight: 700, color: '#F89F1A', marginBottom: 3 }}>⚠ Wrong Network</div>
+                <div style={{ fontWeight: 700, color: '#F89F1A', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 6 }}><TriangleAlert size={15} />Wrong Network</div>
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
                   Switch to <strong>Base Sepolia</strong> (chain 84532) to use this market.
                 </div>
@@ -225,7 +226,7 @@ export default function LendingPage() {
               borderRadius: 12, padding: '40px 24px', textAlign: 'center', marginBottom: 28,
             }}
           >
-            <div style={{ fontSize: 40, marginBottom: 12 }}>🔒</div>
+            <Lock size={40} strokeWidth={1.5} style={{ color: 'var(--text-secondary)', margin: '0 auto 12px' }} />
             <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--text-primary)', marginBottom: 8 }}>
               Connect your wallet
             </div>

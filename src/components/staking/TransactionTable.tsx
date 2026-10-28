@@ -54,7 +54,6 @@ export default function TransactionTable() {
       onSearch={(q) => console.log('search', q)}
       onClear={() => setFilter('ALL')}
       emptyText="No transactions found"
-      emptyIcon="📭"
     />
   );
 }
