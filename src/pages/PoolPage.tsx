@@ -9,7 +9,8 @@ import TokenInput from '../components/common/TokenInput';
 import ScrollReveal from '../components/common/ScrollReveal';
 import type { Token, Pool, PoolStats } from '../types';
 import { useTokens } from '../context/TokensContext';
-import { FEE_TIERS, CONTRACT_ERRORS } from '../config/contracts';
+import { FEE_TIERS } from '../config/contracts';
+import { getErrorMessage } from '../utils/errors';
 import { listPoolsFromIndex } from '../services/api/poolsListApi';
 import {
   ensurePoolCreatedAndInitialized,
@@ -20,7 +21,7 @@ import {
 import { humanPriceToken1PerToken0ToSqrtPriceX96 } from '../utils/liquidityAmounts';
 import { addLiquidity } from '../services/api/positionService';
 import { useToast } from '../context/ToastContext';
-import { formatCompactUSD, formatNumber, shortenTxHash } from '../utils/formatUtils';
+import { formatCompactUSD, formatNumber } from '../utils/formatUtils';
 import { recordTxHistory } from '../services/history/txHistoryStorage';
 import { getTickRange, maxRangeTicksForSpacing } from '../utils/tickUtils';
 import { TriangleAlert } from 'lucide-react';
@@ -34,15 +35,6 @@ const cardSpring = {
   viewport: { once: true, margin: '-40px' },
   transition: { type: 'spring' as const, stiffness: 300, damping: 20 },
 };
-
-function resolveError(err: unknown): string {
-  const msg = (err as { reason?: string; message?: string })?.reason
-    || (err as { message?: string })?.message || 'Transaction failed';
-  for (const [code, friendly] of Object.entries(CONTRACT_ERRORS)) {
-    if (msg.includes(code)) return friendly;
-  }
-  return msg;
-}
 
 const POOLS_INDEX_PAGE_SIZE = 10;
 
@@ -240,7 +232,7 @@ export default function PoolPage() {
         setIndexTotal(total);
       } catch (e) {
         if (!cancelled) {
-          setIndexError((e as Error)?.message ?? 'Failed to load pools');
+          setIndexError(getErrorMessage(e, 'Failed to load pools'));
           setIndexRows([]);
           setIndexTotal(0);
         }
@@ -357,7 +349,7 @@ export default function PoolPage() {
 
   const tickSpacing = FEE_TIERS.find(f => f.fee === fee)?.tickSpacing ?? 60;
 
-  const { tickLower, tickUpper, ticksReady } = useMemo(() => {
+  const { tickLower, tickUpper } = useMemo(() => {
     if (fullRange) return { ...maxRangeTicksForSpacing(tickSpacing), ticksReady: true as const };
     const lo = parseFloat(priceLower);
     const hi = parseFloat(priceUpper);
@@ -394,7 +386,7 @@ export default function PoolPage() {
       return;
     }
     if (!(tickLower < tickUpper)) {
-      showToast('error', 'Invalid ticks for this range. Widen min/max price or use Full range.');
+      showToast('error', 'Invalid price range. Widen min/max price or use Full range.');
       return;
     }
     txInFlightRef.current = true;
@@ -424,7 +416,12 @@ export default function PoolPage() {
           return;
         }
         showToast('info', 'Creating or initializing pool...');
-        await ensurePoolCreatedAndInitialized(token0.address, token1.address, fee, sqrtX96);
+        const { createHash, initHash } = await ensurePoolCreatedAndInitialized(token0.address, token1.address, fee, sqrtX96);
+        if (createHash) {
+          showToast('success', `Pool created · ${token0.symbol}/${token1.symbol}`, { txHash: createHash });
+        } else if (initHash) {
+          showToast('success', `Pool initialized · ${token0.symbol}/${token1.symbol}`, { txHash: initHash });
+        }
         const [freshPool, freshStats] = await Promise.all([
           getPool(token0.address, token1.address, fee),
           getPoolStats(token0.address, token1.address, fee),
@@ -444,10 +441,14 @@ export default function PoolPage() {
           summary: `Added liquidity ${token0.symbol}/${token1.symbol} · NFT #${result.tokenId}`,
         });
       }
-      showToast('success', `Liquidity added! Token ID: #${result.tokenId}. Tx: ${shortenTxHash(result.hash)}`);
+      showToast(
+        'success',
+        `Deposited ${amount0} ${token0.symbol} + ${amount1} ${token1.symbol} · Position #${result.tokenId}`,
+        { txHash: result.hash },
+      );
       setAmount0(''); setAmount1('');
     } catch (err) {
-      showToast('error', resolveError(err));
+      showToast('error', getErrorMessage(err, 'Transaction failed'));
     } finally {
       txInFlightRef.current = false;
       setLoadingTx(false);
@@ -684,7 +685,7 @@ export default function PoolPage() {
       style={{ display: 'flex', flexDirection: 'column', gap: 20 }}
       {...cardSpring}
     >
-      {/* Token Pair */}
+      {/* Deposit Amounts */}
       <div>
         <div
           style={{
@@ -696,18 +697,20 @@ export default function PoolPage() {
             marginBottom: 10,
           }}
         >
-          Select Pair
+          {activeFormMode === 'new' ? 'Select Pair' : 'Deposit Amounts'}
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <TokenInput
-            label="Token A" token={token0} amount=""
+            label={token0.symbol} token={token0} amount={amount0}
+            balance={isConnected ? balance0 : undefined}
             onTokenChange={t => { setToken0(t); setAmount0(''); setAmount1(''); setSelectedIndexPool(null); }}
-            excludeToken={token1} readonly
+            onAmountChange={handleAmount0Change} excludeToken={token1}
           />
           <TokenInput
-            label="Token B" token={token1} amount=""
+            label={token1.symbol} token={token1} amount={amount1}
+            balance={isConnected ? balance1 : undefined}
             onTokenChange={t => { setToken1(t); setAmount0(''); setAmount1(''); setSelectedIndexPool(null); }}
-            excludeToken={token0} readonly
+            onAmountChange={handleAmount1Change} excludeToken={token0}
           />
         </div>
       </div>
@@ -905,17 +908,6 @@ export default function PoolPage() {
           ))}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <div className="price-display" style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tick Lower</div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{ticksReady ? tickLower : '—'}</div>
-          </div>
-          <div className="price-display" style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tick Upper</div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{ticksReady ? tickUpper : '—'}</div>
-          </div>
-        </div>
-
         {/* Out-of-range warning animates in/out without layout jump */}
         <AnimatePresence>
           {!inRange && poolInitialized && pool && (
@@ -932,34 +924,6 @@ export default function PoolPage() {
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
-
-      {/* Deposit Amounts */}
-      <div>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.07em',
-            color: 'var(--text-secondary)',
-            marginBottom: 10,
-          }}
-        >
-          Deposit Amounts
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <TokenInput
-            label={token0.symbol} token={token0} amount={amount0}
-            balance={isConnected ? balance0 : undefined}
-            onTokenChange={() => { }} onAmountChange={handleAmount0Change}
-          />
-          <TokenInput
-            label={token1.symbol} token={token1} amount={amount1}
-            balance={isConnected ? balance1 : undefined}
-            onTokenChange={() => { }} onAmountChange={handleAmount1Change}
-          />
-        </div>
       </div>
 
       {/* Summary — slides in when both amounts are entered */}

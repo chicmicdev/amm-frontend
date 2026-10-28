@@ -9,6 +9,8 @@ import { fetchStakingPoolMeta } from '../../services/api/stakingChainService';
 import { getTokenBalance } from '../../services/api/poolService';
 import type { StakingPoolMeta } from '../../services/api/stakingChainService';
 import { STAKING_BLOCKS_PER_DAY, formatStakingNumber } from '../../utils/stakingFormat';
+import { notifyTxSuccess } from '../../context/ToastContext';
+import { getErrorMessage } from '../../utils/errors';
 
 function rewardPreviewApr(parsed: number, aprPercent: number): { daily: string; monthly: string } {
   if (parsed <= 0 || !Number.isFinite(parsed)) return { daily: '0', monthly: '0' };
@@ -91,28 +93,28 @@ export default function StakeCard() {
 
   const stakeMut = useMutation({
     mutationFn: () => postStake(address ?? '', amount.trim(), ''),
-    onSuccess: () => {
-      toast.success(`Staked ${amount.trim()} ${symbol}`);
+    onSuccess: (d) => {
+      notifyTxSuccess(`Staked ${amount.trim()} ${symbol}`, d.txHash);
       setAmount('');
       qc.invalidateQueries({ queryKey: ['userPosition'] });
       qc.invalidateQueries({ queryKey: ['stakingStats'] });
       qc.invalidateQueries({ queryKey: ['stakingPoolMeta'] });
       qc.invalidateQueries({ queryKey: ['stakingTokenBalance'] });
     },
-    onError: (e: Error) => toast.error(e?.message ?? 'Stake failed.'),
+    onError: (e: Error) => toast.error(getErrorMessage(e, 'Stake failed.')),
   });
 
   const unstakeMut = useMutation({
     mutationFn: () => postUnstake(address ?? '', amount.trim()),
-    onSuccess: () => {
-      toast.success(`Unstaked ${amount.trim()} ${symbol}`);
+    onSuccess: (d) => {
+      notifyTxSuccess(`Unstaked ${amount.trim()} ${symbol}`, d.txHash);
       setAmount('');
       qc.invalidateQueries({ queryKey: ['userPosition'] });
       qc.invalidateQueries({ queryKey: ['stakingStats'] });
       qc.invalidateQueries({ queryKey: ['stakingPoolMeta'] });
       qc.invalidateQueries({ queryKey: ['stakingTokenBalance'] });
     },
-    onError: (e: Error) => toast.error(e?.message ?? 'Unstake failed.'),
+    onError: (e: Error) => toast.error(getErrorMessage(e, 'Unstake failed.')),
   });
 
   const isLoading = stakeMut.isPending || unstakeMut.isPending;

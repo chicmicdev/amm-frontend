@@ -9,6 +9,8 @@ import {
 } from '../services/api/stakingService';
 import { canClaimStakingRewards, formatStakingNumber, STAKING_MIN_CLAIM_REWARD_HUMAN } from '../utils/stakingFormat';
 import RewardsChart from '../components/staking/RewardsChart';
+import { notifyTxSuccess } from '../context/ToastContext';
+import { getErrorMessage } from '../utils/errors';
 
 export default function DashboardPage() {
   const { address } = useAppKitAccount();
@@ -27,24 +29,24 @@ export default function DashboardPage() {
   const claimMut = useMutation({
     mutationFn: () => postClaim(address ?? ''),
     onSuccess: (d) => {
-      toast.success(`Claimed ${formatStakingNumber(d.amount, 12)} ${position?.rewardSymbol ?? ''}`.trim());
+      notifyTxSuccess(`Claimed ${formatStakingNumber(d.amount, 12)} ${position?.rewardSymbol ?? ''}`.trim(), d.txHash);
       qc.invalidateQueries({ queryKey: ['userPosition'] });
       qc.invalidateQueries({ queryKey: ['stakingStats'] });
       qc.invalidateQueries({ queryKey: ['stakingPoolMeta'] });
     },
-    onError: (e: Error) => toast.error(e?.message ?? 'Claim failed.'),
+    onError: (e: Error) => toast.error(getErrorMessage(e, 'Claim failed.')),
   });
 
   const unstakeMut = useMutation({
     mutationFn: () => postUnstakeAll(address ?? ''),
-    onSuccess: () => {
-      toast.success('Unstaked full balance.');
+    onSuccess: (d) => {
+      notifyTxSuccess('Unstaked full balance', d.txHash);
       qc.invalidateQueries({ queryKey: ['userPosition'] });
       qc.invalidateQueries({ queryKey: ['stakingStats'] });
       qc.invalidateQueries({ queryKey: ['stakingPoolMeta'] });
       qc.invalidateQueries({ queryKey: ['stakingTokenBalance'] });
     },
-    onError: (e: Error) => toast.error(e?.message ?? 'Unstake failed.'),
+    onError: (e: Error) => toast.error(getErrorMessage(e, 'Unstake failed.')),
   });
 
   const positions = position && (position.stakedAmount > 0 || position.pendingRewards > 0)

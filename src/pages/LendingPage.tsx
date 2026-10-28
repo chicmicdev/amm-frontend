@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import { useSwitchChain, useChainId } from 'wagmi';
+import { useToast } from '../context/ToastContext';
+import { getErrorMessage } from '../utils/errors';
 import { LENDING_CHAIN_ID } from '../config/lending';
 import {
   fetchLendingReserves,
@@ -61,6 +63,7 @@ export default function LendingPage() {
   const chainId             = useChainId();
   const isBaseSepolia       = chainId === LENDING_CHAIN_ID;
 
+  const { showToast } = useToast();
   const [reserves, setReserves]       = useState<ReserveInfo[]>([]);
   const [userData, setUserData]       = useState<UserAccountData | null>(null);
   const [loadingReserves, setLoading] = useState(true);
@@ -77,12 +80,15 @@ export default function LendingPage() {
       .then(data => {
         if (!cancelled) setReserves(data);
       })
-      .catch(console.error)
+      .catch(e => {
+        console.error(e);
+        if (!cancelled) showToast('error', getErrorMessage(e, 'Could not load lending markets.'));
+      })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [showToast]);
 
   // ── Refresh user account summary ────────────────────────────────────────────
   const refreshUser = useCallback(async () => {
