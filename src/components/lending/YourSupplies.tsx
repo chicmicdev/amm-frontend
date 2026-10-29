@@ -5,6 +5,7 @@ import { fmt } from './lendingUtils';
 import { SectionCard } from './SectionCard';
 import { TokenIcon } from './TokenIcon';
 import { Btn } from './Btn';
+import { supplyDisabledReason } from './reserveStatus';
 import { InfoIcon } from './Tooltip';
 import DataTable, { type ColumnConfig } from '../common/DataTable';
 
@@ -124,14 +125,21 @@ export function YourSupplies({ reserves, balances, userData, onAction }: YourSup
       label: '',
       type: 'text',
       noWrap: true,
-      gridTrack: 'minmax(200px, auto)',
+      gridTrack: '210px',
       align: 'right',
       render: (_, row) => {
         const r = row.reserve as ReserveInfo;
         return (
           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-            <Btn label="Supply" color="#46BC8C" small onClick={() => onAction(r, 'supply')} />
-            <Btn label="Withdraw" color="#46BC8C" variant="outline" small onClick={() => onAction(r, 'withdraw')} />
+            <Btn
+              label="Supply"
+              color="var(--color-accent)"
+              small
+              disabled={!!supplyDisabledReason(r)}
+              reason={supplyDisabledReason(r) ?? undefined}
+              onClick={() => onAction(r, 'supply')}
+            />
+            <Btn label="Withdraw" color="var(--color-accent)" variant="outline" small onClick={() => onAction(r, 'withdraw')} />
           </div>
         );
       },

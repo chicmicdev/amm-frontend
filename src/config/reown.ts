@@ -3,6 +3,7 @@ import { createAppKit } from '@reown/appkit/react';
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi';
 import { polygonAmoy, sepolia, hardhat, baseSepolia } from '@reown/appkit/networks';
 import type { AppKitNetwork } from '@reown/appkit/networks';
+import { LENDING_CHAIN_ID, createBaseSepoliaTransport } from './lending';
 
 export const projectId = 'a1f319ce3901f51cf8c063f7fbe74b6a';
 
@@ -25,6 +26,7 @@ export const wagmiAdapter = new WagmiAdapter({
   networks,
   projectId,
   ssr: false,
+  transports: { [LENDING_CHAIN_ID]: createBaseSepoliaTransport() },
 });
 
 export const appkitModal = createAppKit({

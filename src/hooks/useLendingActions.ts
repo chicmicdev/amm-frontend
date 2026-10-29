@@ -1,18 +1,41 @@
 import { useCallback, useState } from 'react';
-import { parseUnits, formatUnits, maxUint256, createPublicClient, http } from 'viem';
+import { parseUnits, formatUnits, maxUint256, createPublicClient } from 'viem';
 import { collectViemErrorText } from '../utils/viemErrors';
 import { getErrorMessage, isUserRejection } from '../utils/errors';
 import { baseSepolia } from 'viem/chains';
 import { useWalletClient } from 'wagmi';
 import { useAppKitAccount } from '@reown/appkit/react';
-import { LENDING_CONTRACTS, INTEREST_RATE_MODE, REFERRAL_CODE, BASE_SEPOLIA_RPC, LENDING_CHAIN_ID } from '../config/lending';
+import { LENDING_CONTRACTS, INTEREST_RATE_MODE, REFERRAL_CODE, LENDING_CHAIN_ID, createBaseSepoliaTransport } from '../config/lending';
 import { LENDING_POOL_ABI, ERC20_ABI } from '../contracts/lendingAbis';
 import { getTransactionCount } from 'viem/actions';
 import { submitWithManagedNonce } from '../services/api/transactionNonceManager';
 
 export type TxStatus = 'idle' | 'approving' | 'pending' | 'success' | 'error';
 
-const readClient = createPublicClient({ chain: baseSepolia, transport: http(BASE_SEPOLIA_RPC) });
+const readClient = createPublicClient({ chain: baseSepolia, transport: createBaseSepoliaTransport(),
+  // Base Sepolia blocks are ~2s; viem's default 4s receipt polling adds dead time per tx.
+  pollingInterval: 1_000,
+});
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+/**
+ * Reads can hit an RPC node a block behind the one that confirmed the previous
+ * transaction. Retry a few times so a freshly confirmed approval / collateral
+ * change is visible before we judge the next step by it.
+ */
+async function retryRead<T>(fn: () => Promise<T>, attempts = 4, delayMs = 1500): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      if (i < attempts - 1) await sleep(delayMs);
+    }
+  }
+  throw lastError;
+}
 
 function submitLendingTransaction(
   account: `0x${string}`,
@@ -87,6 +110,18 @@ export function useLendingActions() {
       );
       const approveReceipt = await readClient.waitForTransactionReceipt({ hash });
       if (approveReceipt.status === 'reverted') throw new Error('Approval transaction reverted on-chain.');
+
+      // Wait until the read RPC reports the new allowance; otherwise the next
+      // simulation can still see the old value and fail on the first attempt.
+      for (let i = 0; i < 20; i += 1) {
+        const current = await readClient.readContract({
+          address: asset, abi: ERC20_ABI,
+          functionName: 'allowance',
+          args: [address as `0x${string}`, LENDING_CONTRACTS.POOL],
+          }) as bigint;
+        if (current >= amount) break;
+        await sleep(500);
+      }
     }
   }, [walletClient, address, ensureCorrectChain]);
 
@@ -113,13 +148,13 @@ export function useLendingActions() {
       await ensureApproval(asset, parsed);
 
       // Preflight simulation after approval gives a clearer failure before user signs tx.
-      await readClient.simulateContract({
+      await retryRead(() => readClient.simulateContract({
         address: LENDING_CONTRACTS.POOL,
         abi: LENDING_POOL_ABI,
         functionName: 'supply',
         args: [asset, parsed, address as `0x${string}`, REFERRAL_CODE],
         account: address as `0x${string}`,
-      });
+      }));
 
       setStatus('pending');
       const hash = await submitLendingTransaction(address as `0x${string}`, walletClient, nonce =>
@@ -147,13 +182,13 @@ export function useLendingActions() {
 
       // Revalidate against the protocol's latest collateral, oracle, and
       // liquidity state before asking the wallet to sign.
-      await readClient.simulateContract({
+      await retryRead(() => readClient.simulateContract({
         address: LENDING_CONTRACTS.POOL,
         abi: LENDING_POOL_ABI,
         functionName: 'borrow',
         args: [asset, parsed, BigInt(INTEREST_RATE_MODE.VARIABLE), REFERRAL_CODE, address as `0x${string}`],
         account: address as `0x${string}`,
-      });
+      }), 2);
 
       const hash = await submitLendingTransaction(address as `0x${string}`, walletClient, nonce =>
         walletClient.writeContract({
