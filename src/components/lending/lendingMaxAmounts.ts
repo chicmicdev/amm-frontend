@@ -1,4 +1,5 @@
 import { parseUnits, formatUnits } from 'viem';
+import { borrowRoomWei } from './reserveStatus';
 import type { ReserveInfo, UserAccountData } from '../../services/lending/lendingService';
 
 /**
@@ -111,7 +112,9 @@ export function maxBorrowWei(
     reserve.priceUSD,
     dec,
   );
-  return minBigint(pool, cap);
+  const borrowRoom = borrowRoomWei(reserve);
+  const base = minBigint(pool, cap);
+  return borrowRoom === null ? base : minBigint(base, borrowRoom);
 }
 
 /** Format wei for input fields (trim trailing zeros after decimal). */

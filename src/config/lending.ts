@@ -3,6 +3,8 @@
  * Pool contract addresses for the integrated lending protocol on this network.
  */
 
+import { fallback, http } from 'viem';
+
 export const LENDING_CHAIN_ID = 84532; // Base Sepolia
 
 export const LENDING_CONTRACTS = {
@@ -31,7 +33,26 @@ export const LENDING_ASSETS = {
   },
 } as const;
 
-export const BASE_SEPOLIA_RPC = 'https://sepolia.base.org';
+/**
+ * RPC endpoints for Base Sepolia, in priority order. Set `VITE_BASE_SEPOLIA_RPC`
+ * (Alchemy / Infura / dRPC) to put a dedicated node first; the public endpoints
+ * stay behind it as fallbacks.
+ */
+const customBaseSepoliaRpc = import.meta.env.VITE_BASE_SEPOLIA_RPC?.trim();
+
+export const BASE_SEPOLIA_RPC_URLS: string[] = [
+  customBaseSepoliaRpc,
+  'https://sepolia.base.org',
+  'https://base-sepolia-rpc.publicnode.com',
+].filter((url): url is string => !!url);
+
+/** Shared transport: tries each RPC in order and falls over on error / timeout. */
+export function createBaseSepoliaTransport() {
+  return fallback(
+    BASE_SEPOLIA_RPC_URLS.map(url => http(url, { retryCount: 2, timeout: 15_000 })),
+    { rank: false },
+  );
+}
 
 /** Interest rate mode: 1 = stable (deprecated in V3.2), 2 = variable */
 export const INTEREST_RATE_MODE = {

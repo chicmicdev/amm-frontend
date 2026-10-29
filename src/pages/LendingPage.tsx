@@ -28,6 +28,15 @@ import { RiskModal }      from '../components/lending/RiskModal';
 import { Btn }            from '../components/lending/Btn';
 import { TriangleAlert, Lock } from 'lucide-react';
 
+type LendTab = 'supply' | 'borrow' | 'supplies' | 'borrows';
+
+const LEND_TABS: { key: LendTab; label: string; requiresWallet?: boolean }[] = [
+  { key: 'supply',   label: 'Supply' },
+  { key: 'borrow',   label: 'Borrow' },
+  { key: 'supplies', label: 'Your Supplies', requiresWallet: true },
+  { key: 'borrows',  label: 'Your Borrows',  requiresWallet: true },
+];
+
 /** Fetches supply / debt / wallet maps; used by the balance effect and manual refresh. */
 async function fetchLendingBalanceMaps(
   addr: `0x${string}`,
@@ -72,6 +81,7 @@ export default function LendingPage() {
   const [walletBals, setWalletBals]   = useState<Record<string, string>>({});
   const [modal, setModal]             = useState<ModalState | null>(null);
   const [showRisk, setShowRisk]       = useState(false);
+  const [activeTab, setActiveTab]     = useState<LendTab>('supply');
 
   // ── Fetch all reserves once (loading starts true; clear only when fetch settles) ──
   useEffect(() => {
@@ -166,6 +176,10 @@ export default function LendingPage() {
     ? calcNetAPY(reserves, supplyBals, debtBals)
     : '0.00';
 
+  const hasPositions = isConnected && isBaseSepolia;
+  const visibleTabs = LEND_TABS.filter(t => !t.requiresWallet || hasPositions);
+  const currentTab = visibleTabs.some(t => t.key === activeTab) ? activeTab : 'supply';
+
   const openModal = (reserve: ReserveInfo, mode: ActionMode) =>
     setModal({ reserve, mode });
 
@@ -179,16 +193,11 @@ export default function LendingPage() {
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px' }}>
 
         {/* ── Page title ──────────────────────────────────────────── */}
-        <div style={{ paddingTop: 52, paddingBottom: 20 }}>
-          <motion.h1
-            initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-            style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 4px' }}
-          >
-            Base Market
-          </motion.h1>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            Lending · Base Sepolia Testnet
-          </div>
+        <div style={{ paddingTop: 52, paddingBottom: 28 }}>
+          <h1 className="page-heading">Lend</h1>
+          <p style={{ fontSize: 15, color: 'var(--text-secondary)', margin: 0 }}>
+            Supply assets to earn yield or borrow against your collateral · Base Sepolia
+          </p>
         </div>
 
         {/* ── Stats bar ───────────────────────────────────────────── */}
@@ -255,36 +264,31 @@ export default function LendingPage() {
         {/* ── Market content ───────────────────────────────────────── */}
         {!loadingReserves && reserves.length > 0 && (
           <>
-            {/* Row 1 — User positions (only when connected + correct chain) */}
-            {isConnected && isBaseSepolia && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 4 }}>
-                <YourSupplies
-                  reserves={reserves}
-                  balances={supplyBals}
-                  userData={userData}
-                  onAction={openModal}
-                />
-                <YourBorrows
-                  reserves={reserves}
-                  debtBals={debtBals}
-                  userData={userData}
-                  onAction={openModal}
-                />
-              </div>
-            )}
+            <div className="stake-subnav">
+              {visibleTabs.map(tab => (
+                <button
+                  key={tab.key}
+                  className={`stake-subnav-tab${currentTab === tab.key ? ' active' : ''}`}
+                  onClick={() => setActiveTab(tab.key)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-            {/* Row 2 — Available markets */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-              <AssetsToSupply
-                reserves={reserves}
-                walletBals={walletBals}
-                onAction={openModal}
-              />
-              <AssetsToBorrow
-                reserves={reserves}
-                userData={userData}
-                onAction={openModal}
-              />
+            <div style={{ marginTop: 32 }}>
+              {currentTab === 'supply' && (
+                <AssetsToSupply reserves={reserves} walletBals={walletBals} onAction={openModal} />
+              )}
+              {currentTab === 'borrow' && (
+                <AssetsToBorrow reserves={reserves} userData={userData} onAction={openModal} />
+              )}
+              {currentTab === 'supplies' && (
+                <YourSupplies reserves={reserves} balances={supplyBals} userData={userData} onAction={openModal} />
+              )}
+              {currentTab === 'borrows' && (
+                <YourBorrows reserves={reserves} debtBals={debtBals} userData={userData} onAction={openModal} />
+              )}
             </div>
           </>
         )}

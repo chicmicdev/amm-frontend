@@ -24,6 +24,7 @@ import {
 } from './lendingMaxAmounts';
 import type { ActionMode } from './lendingTypes';
 import { MODE_CFG } from './lendingTypes';
+import { supplyRoomWei, borrowRoomWei, supplyDisabledReason, borrowDisabledReason } from './reserveStatus';
 import { TriangleAlert, Loader2 } from 'lucide-react';
 
 interface ActionModalProps {
@@ -130,7 +131,17 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
     maxWei !== null &&
     amtWeiParsed !== null &&
     amtWeiParsed <= maxWei;
+  const supplyRoom = mode === 'supply' ? supplyRoomWei(reserve) : null;
+  const capExceeded =
+    supplyRoom !== null && amtWeiParsed !== null && amtWeiParsed > supplyRoom;
+  const blockedReason =
+    mode === 'supply' ? supplyDisabledReason(reserve)
+    : mode === 'borrow' ? borrowDisabledReason(reserve)
+    : null;
+  const inputError = blockedReason ?? (capExceeded ? 'Supply cap reached' : null);
   const canSubmit =
+    !blockedReason &&
+    !capExceeded &&
     !isPending &&
     !balancesError &&
     maxWei !== null &&
@@ -187,22 +198,6 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
         amtWeiParsed !== null &&
         amtWeiParsed >= maxWei;
       await withdraw(asset, normalized, dec, isMaxWithdraw);
-    }
-  };
-
-  const addToWallet = async () => {
-    try {
-      const eth = (window as unknown as {
-        ethereum?: { request?: (a: { method: string; params: unknown[] }) => Promise<unknown> };
-      }).ethereum;
-      if (!eth?.request) return;
-      await eth.request({
-        method: 'wallet_watchAsset',
-        params: [{ type: 'ERC20', options: { address: reserve.asset, symbol: reserve.symbol, decimals: reserve.decimals } }],
-      });
-      toast.success(`${reserve.symbol} added to wallet`);
-    } catch {
-      toast.error('Could not add token');
     }
   };
 
@@ -264,28 +259,6 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
               </div>
             </div>
 
-            <div style={{
-              background: 'var(--bg-secondary)', border: '1px solid var(--border)',
-              borderRadius: 10, padding: 16, marginBottom: 14,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <TokenIcon symbol={reserve.symbol} size={36} />
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                  Add {reserve.symbol} to wallet to track your balance.
-                </div>
-              </div>
-              <button
-                onClick={addToWallet}
-                style={{
-                  width: '100%', padding: '9px', borderRadius: 8,
-                  border: '1px solid var(--border)', background: 'var(--bg-card)',
-                  color: 'var(--text-primary)', fontWeight: 700, cursor: 'pointer', fontSize: 14,
-                }}
-              >
-                Add to wallet
-              </button>
-            </div>
-
             <button
               onClick={() => { onSuccess(); onClose(); }}
               style={{
@@ -313,13 +286,15 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
                 }}
               >
                 {maxLabel}:{' '}
-                {maxWei === null || maxWei <= 0n
-                  ? '—'
-                  : `${formatWeiForAmountInput(maxWei, dec)} MAX`}
+                {mode === 'supply' && walletWei !== null
+                  ? `${formatWeiForAmountInput(walletWei, dec)}${maxWei !== null && maxWei > 0n ? ' MAX' : ''}`
+                  : maxWei === null || maxWei <= 0n
+                    ? '—'
+                    : `${formatWeiForAmountInput(maxWei, dec)} MAX`}
               </button>
             </div>
 
-            {maxWei !== null && maxWei > 0n && (
+            {mode !== 'borrow' && maxWei !== null && maxWei > 0n && (
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
                 Maximum {formatWeiForAmountInput(maxWei, dec)} {reserve.symbol} (pool + your position limits)
               </div>
@@ -334,7 +309,7 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
                 Borrow limit is based on remaining USD borrowing power, oracle price, and pool liquidity.
               </div>
             )}
-            {maxWei !== null && maxWei <= 0n && (
+            {!blockedReason && maxWei !== null && maxWei <= 0n && (
               <div style={{ fontSize: 12, color: '#F89F1A', marginBottom: 8 }}>
                 Nothing available for this action right now.
               </div>
@@ -376,6 +351,11 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
                 </span>
               </div>
             </div>
+            {inputError && (
+              <div style={{ fontSize: 11, color: '#F44336', margin: '-12px 0 16px' }}>
+                {inputError}
+              </div>
+            )}
 
             {/* ── Transaction overview ──────────────────────────── */}
             <div style={{
@@ -404,6 +384,20 @@ export function ActionModal({ reserve, mode, userAddress, onClose, onSuccess }: 
                   <span style={{ color: '#46BC8C', fontWeight: 700 }}>Enabled</span>
                 </div>
               )}
+
+              {(mode === 'supply' || mode === 'borrow') && (() => {
+                const room = mode === 'supply' ? supplyRoomWei(reserve) : borrowRoomWei(reserve);
+                return (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 14 }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      {mode === 'supply' ? 'Remaining Supply Cap' : 'Borrow cap space left'}
+                    </span>
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
+                      {room === null ? 'No cap' : `${fmt(formatUnits(room, dec), 4)} ${reserve.symbol}`}
+                    </span>
+                  </div>
+                );
+              })()}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Health factor</span>
