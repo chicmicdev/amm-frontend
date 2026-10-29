@@ -5,6 +5,7 @@ import { fmt } from './lendingUtils';
 import { SectionCard } from './SectionCard';
 import { TokenIcon } from './TokenIcon';
 import { Btn } from './Btn';
+import { borrowDisabledReason } from './reserveStatus';
 import { InfoIcon } from './Tooltip';
 import DataTable, { type ColumnConfig } from '../common/DataTable';
 
@@ -107,14 +108,21 @@ export function YourBorrows({ reserves, debtBals, userData, onAction }: YourBorr
       label: '',
       type: 'text',
       noWrap: true,
-      gridTrack: 'minmax(200px, auto)',
+      gridTrack: '210px',
       align: 'right',
       render: (_, row) => {
         const r = row.reserve as ReserveInfo;
         return (
           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-            <Btn label="Borrow" color="#F89F1A" small onClick={() => onAction(r, 'borrow')} />
-            <Btn label="Repay" color="#F89F1A" variant="outline" small onClick={() => onAction(r, 'repay')} />
+            <Btn
+              label="Borrow"
+              color="var(--color-accent)"
+              small
+              disabled={!!borrowDisabledReason(r)}
+              reason={borrowDisabledReason(r) ?? undefined}
+              onClick={() => onAction(r, 'borrow')}
+            />
+            <Btn label="Repay" color="var(--color-accent)" variant="outline" small onClick={() => onAction(r, 'repay')} />
           </div>
         );
       },

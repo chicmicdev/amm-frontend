@@ -6,6 +6,7 @@ import { fmt } from './lendingUtils';
 import { SectionCard } from './SectionCard';
 import { TokenIcon } from './TokenIcon';
 import { Btn } from './Btn';
+import { borrowDisabledReason } from './reserveStatus';
 import { InfoIcon } from './Tooltip';
 import DataTable, { type ColumnConfig } from '../common/DataTable';
 import { maxBorrowWei } from './lendingMaxAmounts';
@@ -97,17 +98,19 @@ export function AssetsToBorrow({ reserves, userData, onAction }: AssetsToBorrowP
       label: '',
       type: 'text',
       noWrap: true,
-      gridTrack: 'minmax(100px, auto)',
+      gridTrack: '150px',
       align: 'right',
       render: (_, row) => {
         const r = row.reserve as ReserveInfo;
         const available = availableForUser(r, userData);
+        const blockedReason = borrowDisabledReason(r);
         return (
           <Btn
             label="Borrow"
-            color="#F89F1A"
+            color="var(--color-accent)"
             small
-            disabled={!userData || available.tokens <= 0}
+            disabled={!!blockedReason || !userData || available.tokens <= 0}
+            reason={blockedReason ?? undefined}
             onClick={() => onAction(r, 'borrow')}
           />
         );

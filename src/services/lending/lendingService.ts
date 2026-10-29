@@ -1,13 +1,13 @@
-import { createPublicClient, http, formatUnits } from 'viem';
+import { createPublicClient, formatUnits, parseUnits } from 'viem';
 import { baseSepolia } from 'viem/chains';
-import { LENDING_CONTRACTS, BASE_SEPOLIA_RPC } from '../../config/lending';
+import { LENDING_CONTRACTS, createBaseSepoliaTransport } from '../../config/lending';
 import { LENDING_POOL_ABI, ERC20_ABI, LENDING_ORACLE_ABI } from '../../contracts/lendingAbis';
 
 // ── Public client for Base Sepolia ───────────────────────────────────────────
 
 export const baseSepoliaClient = createPublicClient({
   chain: baseSepolia,
-  transport: http(BASE_SEPOLIA_RPC),
+  transport: createBaseSepoliaTransport(),
 });
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -22,6 +22,17 @@ export interface ReserveInfo {
   variableDebtTokenAddress: `0x${string}`;
   availableLiquidity: string;    // token units
   priceUSD: string;              // USD price per token (8-decimal oracle, converted to float string)
+  /** Reserve configuration flags (from the pool's ReserveConfiguration bitmap). */
+  isActive: boolean;
+  isFrozen: boolean;
+  isPaused: boolean;
+  borrowingEnabled: boolean;
+  /** Caps in whole token units; '0' means no cap. */
+  supplyCap: string;
+  borrowCap: string;
+  /** Current totals in token units (aToken / variable debt token supply). */
+  totalSupplied: string;
+  totalBorrowed: string;
 }
 
 export interface UserAccountData {
@@ -89,6 +100,10 @@ export async function fetchLendingReserves(): Promise<ReserveInfo[]> {
       ]);
 
       const rd = reserveData as {
+        configuration: bigint;
+        liquidityIndex: bigint;
+        lastUpdateTimestamp: number | bigint;
+        accruedToTreasury: bigint;
         currentLiquidityRate: bigint;
         currentVariableBorrowRate: bigint;
         aTokenAddress: `0x${string}`;
@@ -106,9 +121,48 @@ export async function fetchLendingReserves(): Promise<ReserveInfo[]> {
         availableLiquidity = formatUnits(liq, decimals as number);
       } catch { /* ignore */ }
 
+      const readTotalSupply = async (token: `0x${string}`) => {
+        try {
+          const total = await baseSepoliaClient.readContract({
+            address: token,
+            abi: ERC20_ABI,
+            functionName: 'totalSupply',
+          }) as bigint;
+          return formatUnits(total, decimals as number);
+        } catch { return '0'; }
+      };
+      const [aTokenSupply, totalBorrowed] = await Promise.all([
+        readTotalSupply(rd.aTokenAddress),
+        readTotalSupply(rd.variableDebtTokenAddress),
+      ]);
+      // Aave's supply-cap check is (scaledTotalSupply + accruedToTreasury) × nextLiquidityIndex.
+      // aToken.totalSupply() already covers the first term, so add the treasury's
+      // share (a scaled amount) at the next liquidity index, projected linearly.
+      const RAY = 10n ** 27n;
+      const YEAR = 31_536_000n;
+      const elapsed = BigInt(Math.max(0, Math.floor(Date.now() / 1000) - Number(rd.lastUpdateTimestamp)));
+      const nextIndex = rd.liquidityIndex + (rd.liquidityIndex * rd.currentLiquidityRate * elapsed) / (RAY * YEAR);
+      const treasuryUnderlying = (rd.accruedToTreasury * nextIndex) / RAY;
+      const totalSupplied = formatUnits(
+        parseUnits(aTokenSupply as `${number}`, decimals as number) + treasuryUnderlying,
+        decimals as number,
+      );
+      // Aave V3 ReserveConfiguration bitmap layout.
+      const cfg = rd.configuration;
+      const flag = (bit: bigint) => ((cfg >> bit) & 1n) === 1n;
+      const field = (start: bigint, width: bigint) => ((cfg >> start) & ((1n << width) - 1n)).toString();
+
       return {
         asset,
         symbol: symbol as string,
+        isActive: flag(56n),
+        isFrozen: flag(57n),
+        borrowingEnabled: flag(58n),
+        isPaused: flag(60n),
+        borrowCap: field(80n, 36n),
+        supplyCap: field(116n, 36n),
+        totalSupplied,
+        totalBorrowed,
         decimals: decimals as number,
         supplyAPY: rayToAPY(rd.currentLiquidityRate),
         borrowAPY: rayToAPY(rd.currentVariableBorrowRate),

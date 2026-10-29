@@ -1,6 +1,7 @@
 import { useState, useRef, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Info } from 'lucide-react';
 
 const TOOLTIP_WIDTH = 260;
 const TOOLTIP_GAP = 8;
@@ -59,30 +60,37 @@ export function Tooltip({ text, children }: TooltipProps) {
         createPortal(
           <AnimatePresence>
             {show && (
-              <motion.div
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
+              <div
                 style={{
                   position: 'fixed',
                   left: pos.left,
                   top: pos.top,
                   width: TOOLTIP_WIDTH,
+                  // Positioning lives on this wrapper so the motion transform below
+                  // cannot override it and push the card back over the trigger.
                   transform: 'translateY(-100%)',
-                  background: '#1E2330',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: 8,
-                  padding: '10px 14px',
-                  fontSize: 12,
-                  color: '#C4CAD4',
-                  lineHeight: 1.5,
                   zIndex: 100_000,
                   pointerEvents: 'none',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
                 }}
               >
-                {text}
-              </motion.div>
+                <motion.div
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  style={{
+                    background: '#1E2330',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 8,
+                    padding: '10px 14px',
+                    fontSize: 12,
+                    color: '#C4CAD4',
+                    lineHeight: 1.5,
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                  }}
+                >
+                  {text}
+                </motion.div>
+              </div>
             )}
           </AnimatePresence>,
           portalTarget,
@@ -94,26 +102,12 @@ export function Tooltip({ text, children }: TooltipProps) {
 export function InfoIcon({ tooltip }: { tooltip: string }) {
   return (
     <Tooltip text={tooltip}>
-      <span
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: 14,
-          height: 14,
-          borderRadius: '50%',
-          border: '1px solid #6B7280',
-          color: '#6B7280',
-          fontSize: 9,
-          fontWeight: 700,
-          lineHeight: 1,
-          cursor: 'default',
-          marginLeft: 4,
-          flexShrink: 0,
-        }}
-      >
-        i
-      </span>
+      <Info
+        size={14}
+        strokeWidth={2}
+        aria-label="More info"
+        style={{ marginLeft: 4, flexShrink: 0, color: 'var(--text-muted)' }}
+      />
     </Tooltip>
   );
 }

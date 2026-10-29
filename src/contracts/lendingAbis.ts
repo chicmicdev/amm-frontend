@@ -167,4 +167,11 @@ export const ERC20_ABI = [
     inputs: [],
     outputs: [{ type: 'string' }],
   },
+  {
+    name: 'totalSupply',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
 ] as const;

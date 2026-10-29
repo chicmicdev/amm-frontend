@@ -5,6 +5,7 @@ import { fmt } from './lendingUtils';
 import { SectionCard } from './SectionCard';
 import { TokenIcon } from './TokenIcon';
 import { Btn } from './Btn';
+import { supplyDisabledReason } from './reserveStatus';
 import { InfoIcon } from './Tooltip';
 import DataTable, { type ColumnConfig } from '../common/DataTable';
 
@@ -104,12 +105,19 @@ export function AssetsToSupply({ reserves, walletBals, onAction }: AssetsToSuppl
       label: '',
       type: 'text',
       noWrap: true,
-      gridTrack: 'minmax(100px, auto)',
+      gridTrack: '150px',
       align: 'right',
       render: (_, row) => {
         const r = row.reserve as ReserveInfo;
         return (
-          <Btn label="Supply" color="#46BC8C" small onClick={() => onAction(r, 'supply')} />
+          <Btn
+            label="Supply"
+            color="var(--color-accent)"
+            small
+            disabled={!!supplyDisabledReason(r)}
+            reason={supplyDisabledReason(r) ?? undefined}
+            onClick={() => onAction(r, 'supply')}
+          />
         );
       },
     },
